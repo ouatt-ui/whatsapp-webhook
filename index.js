@@ -140,7 +140,7 @@ Nous proposons notamment :
 Répondez simplement avec le numéro correspondant à votre besoin.`;
 
       await axios.post(
-        `https://graph.facebook.com/v25.0/${PHONE_NUMBER_ID}/messages`,
+        `https://graph.facebook.com/v26.0/${PHONE_NUMBER_ID}/messages`,
         {
           messaging_product: "whatsapp",
           to: from,
