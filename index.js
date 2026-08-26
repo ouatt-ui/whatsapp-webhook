@@ -98,7 +98,14 @@ app.post("/webhook", async (req, res) => {
 
     const message = value.messages[0];
 
-    const from = message.from;
+    let from = message.from;
+
+// Pour le numéro de test Meta :
+// le wa_id reçu par le webhook doit être converti
+// vers le numéro utilisé par l'API d'envoi.
+if (from === "22557948536") {
+  from = "2250757948536";
+}
 
     let messageText = "";
 
