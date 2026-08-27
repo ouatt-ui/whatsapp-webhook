@@ -1,12 +1,17 @@
 {
-  "name": "whatsapp-webhook",
-  "version": "1.0.0",
+  "name": "visionprotection-crm",
+  "version": "2.6.0",
+  "description": "VisionProtection CRM - WhatsApp Webhook",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "axios": "^1.6.0"
+    "axios": "^1.11.0",
+    "express": "^5.1.0",
+    "mysql2": "^3.14.3"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
