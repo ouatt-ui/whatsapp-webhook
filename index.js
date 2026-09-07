@@ -1,40 +1,17 @@
-  const express = require("express");
+const express = require("express");
 const axios = require("axios");
 
 const app = express();
-
 app.use(express.json());
 
-// ======================================================
-// VISIONPROTECTION WHATSAPP CRM
-// VERSION 2.5.1
-// ======================================================
-
 const PORT = process.env.PORT || 3000;
-
-const VERIFY_TOKEN =
-  process.env.META_VERIFY_TOKEN || "visionprotection2024";
-
-const WHATSAPP_TOKEN =
-  process.env.WHATSAPP_ACCESS_TOKEN || "";
-
-const PHONE_NUMBER_ID =
-  process.env.WHATSAPP_PHONE_NUMBER_ID || "";
-
+const VERIFY_TOKEN = process.env.META_VERIFY_TOKEN || "visionprotection2024";
+const WHATSAPP_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN || "";
+const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || "";
 const GRAPH_VERSION = "v26.0";
-
-const WHATSAPP_API_URL =
-  `https://graph.facebook.com/${GRAPH_VERSION}/${PHONE_NUMBER_ID}/messages`;
-
-// ======================================================
-// STOCKAGE TEMPORAIRE DES SESSIONS
-// ======================================================
+const WHATSAPP_API_URL = `https://graph.facebook.com/${GRAPH_VERSION}/${PHONE_NUMBER_ID}/messages`;
 
 const sessions = new Map();
-
-// ======================================================
-// SERVICES
-// ======================================================
 
 const SERVICES = {
   "1": "Vidéosurveillance",
@@ -48,25 +25,8 @@ const SERVICES = {
   "9": "Conseiller"
 };
 
-// ======================================================
-// NORMALISATION DU NUMERO
-// ======================================================
-
 function normalizeForApi(phone) {
-
   let number = String(phone).replace(/[^\d]/g, "");
-
-  /*
-   * Compatibilité avec le numéro de test Meta.
-   *
-   * Meta peut envoyer :
-   *
-   * 22557948536
-   *
-   * alors que l'API de test attend :
-   *
-   * 2250757948536
-   */
 
   if (number === "22557948536") {
     return "2250757948536";
@@ -75,179 +35,106 @@ function normalizeForApi(phone) {
   return number;
 }
 
-// ======================================================
-// CREATION / RECUPERATION SESSION
-// ======================================================
+/*
+ * Déclencheur amélioré :
+ * bonjour, bonjour test, bonjour je veux un devis,
+ * salut je veux des caméras, bjr..., bonsoir..., etc.
+ *
+ * La séquence automatique existante est conservée.
+ */
+function isConversationStart(text) {
+  const normalized = String(text || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+
+  return (
+    normalized === "menu" ||
+    normalized === "start" ||
+    normalized === "0" ||
+    /^(bonjour|bjr|bonsoir|slt|salut)\b/.test(normalized)
+  );
+}
 
 function getSession(phone, profileName = "") {
-
-  const key = normalizeForApi(phone);
+  const key = String(phone);
 
   if (!sessions.has(key)) {
-
     sessions.set(key, {
-
       phone: key,
-
-      name:
-        profileName ||
-        "Prospect",
-
-      state:
-        "MENU",
-
-      service:
-        null,
-
-      siteType:
-        null,
-
-      location:
-        null,
-
-      project:
-        null,
-
-      quantity:
-        null,
-
-      delay:
-        null,
-
-      history:
-        [],
-
-      createdAt:
-        new Date().toISOString(),
-
-      updatedAt:
-        new Date().toISOString()
-
+      name: profileName || "",
+      state: "MENU",
+      service: null,
+      siteType: null,
+      location: null,
+      project: null,
+      quantity: null,
+      delay: null,
+      history: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     });
-
   }
 
-  const session =
-    sessions.get(key);
+  const session = sessions.get(key);
 
-  if (profileName) {
-
-    session.name =
-      profileName;
-
+  if (profileName && !session.name) {
+    session.name = profileName;
   }
 
-  session.updatedAt =
-    new Date().toISOString();
-
+  session.updatedAt = new Date().toISOString();
   return session;
 }
 
-// ======================================================
-// HISTORIQUE
-// ======================================================
-
-function addHistory(
-  session,
-  direction,
-  text
-) {
-
+function addHistory(session, direction, text) {
   session.history.push({
-
     direction,
-
     text,
-
-    timestamp:
-      new Date().toISOString()
-
+    at: new Date().toISOString()
   });
 
-  if (
-    session.history.length >
-    100
-  ) {
-
-    session.history =
-      session.history.slice(-100);
-
+  if (session.history.length > 100) {
+    session.history = session.history.slice(-100);
   }
+
+  session.updatedAt = new Date().toISOString();
 }
 
-// ======================================================
-// ENVOI MESSAGE WHATSAPP
-// ======================================================
-
-async function sendText(
-  to,
-  body
-) {
-
-  if (
-    !WHATSAPP_TOKEN ||
-    !PHONE_NUMBER_ID
-  ) {
-
+async function sendText(to, body) {
+  if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
     throw new Error(
-      "WHATSAPP_ACCESS_TOKEN ou WHATSAPP_PHONE_NUMBER_ID manquant dans Render"
+      "WHATSAPP_ACCESS_TOKEN ou WHATSAPP_PHONE_NUMBER_ID manquant."
     );
-
   }
 
-  const recipient =
-    normalizeForApi(to);
+  const recipient = normalizeForApi(to);
 
-  const response =
-    await axios.post(
-
-      WHATSAPP_API_URL,
-
-      {
-
-        messaging_product:
-          "whatsapp",
-
-        to:
-          recipient,
-
-        type:
-          "text",
-
-        text: {
-
-          body:
-            body
-
-        }
-
-      },
-
-      {
-
-        headers: {
-
-          Authorization:
-            `Bearer ${WHATSAPP_TOKEN}`,
-
-          "Content-Type":
-            "application/json"
-
-        }
-
+  const response = await axios.post(
+    WHATSAPP_API_URL,
+    {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: recipient,
+      type: "text",
+      text: {
+        preview_url: false,
+        body
       }
-
-    );
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+        "Content-Type": "application/json"
+      },
+      timeout: 30000
+    }
+  );
 
   return response.data;
 }
 
-// ======================================================
-// MENU PRINCIPAL
-// ======================================================
-
 function mainMenu() {
-
   return `Bonjour 👋 Bienvenue chez VisionProtection & Informatique.
 
 Merci pour votre message.
@@ -265,67 +152,50 @@ Merci pour votre message.
 9️⃣ Parler à un conseiller
 
 👉 Répondez simplement avec le numéro de votre choix.`;
-
 }
 
-// ======================================================
-// QUESTIONS SERVICES
-// ======================================================
-
 function serviceQuestion(service) {
+  switch (service) {
+    case "Vidéosurveillance":
+      return `Très bien 👍
 
-  const questions = {
-
-    "Vidéosurveillance":
-
-`📹 *VIDÉOSURVEILLANCE*
-
-Quel type de site souhaitez-vous équiper ?
+Pour quel type de site souhaitez-vous installer la vidéosurveillance ?
 
 1️⃣ Maison
 2️⃣ Bureau
 3️⃣ Commerce
 4️⃣ Hôtel
 5️⃣ Usine
-6️⃣ Autre
+6️⃣ Autre`;
 
-Répondez avec le numéro correspondant.`,
+    case "Contrôle d'accès":
+      return `Très bien 👍
 
-    "Contrôle d'accès":
+Quel type de contrôle d'accès recherchez-vous ?
 
-`🔐 *CONTRÔLE D'ACCÈS*
-
-Quel type d'installation recherchez-vous ?
-
-1️⃣ Porte
+1️⃣ Une porte
 2️⃣ Plusieurs portes
 3️⃣ Immeuble
 4️⃣ Hôtel
 5️⃣ Entreprise
-6️⃣ Autre
+6️⃣ Autre`;
 
-Répondez avec le numéro correspondant.`,
+    case "Alarme intrusion":
+      return `Très bien 👍
 
-    "Alarme intrusion":
-
-`🚨 *ALARME INTRUSION*
-
-Quel type de site souhaitez-vous protéger ?
+Pour quel type de site souhaitez-vous l'alarme intrusion ?
 
 1️⃣ Maison
 2️⃣ Bureau
 3️⃣ Commerce
 4️⃣ Hôtel
 5️⃣ Usine
-6️⃣ Autre
+6️⃣ Autre`;
 
-Répondez avec le numéro correspondant.`,
+    case "SSI / CMSI":
+      return `Très bien 👍
 
-    "SSI / CMSI":
-
-`🔥 *SSI / CMSI*
-
-Quel type de bâtiment souhaitez-vous sécuriser ?
+Pour quel type de bâtiment souhaitez-vous le système SSI / CMSI ?
 
 1️⃣ Hôtel
 2️⃣ Immeuble
@@ -333,29 +203,23 @@ Quel type de bâtiment souhaitez-vous sécuriser ?
 4️⃣ Usine
 5️⃣ Commerce
 6️⃣ Établissement public
-7️⃣ Autre
+7️⃣ Autre`;
 
-Répondez avec le numéro correspondant.`,
+    case "Motorisation de portail":
+      return `Très bien 👍
 
-    "Motorisation de portail":
-
-`🚪 *MOTORISATION DE PORTAIL*
-
-Quel équipement souhaitez-vous automatiser ?
+Quel type de portail souhaitez-vous motoriser ?
 
 1️⃣ Portail coulissant
 2️⃣ Portail battant
 3️⃣ Portail industriel
 4️⃣ Barrière automatique
-5️⃣ Autre
+5️⃣ Autre`;
 
-Répondez avec le numéro correspondant.`,
+    case "Domotique":
+      return `Très bien 👍
 
-    "Domotique":
-
-`🏠 *DOMOTIQUE*
-
-Quel besoin vous intéresse ?
+Quelle solution domotique vous intéresse ?
 
 1️⃣ Éclairage
 2️⃣ Climatisation
@@ -363,1352 +227,468 @@ Quel besoin vous intéresse ?
 4️⃣ Contrôle à distance
 5️⃣ Hôtel / chambre
 6️⃣ Maison intelligente
-7️⃣ Autre
+7️⃣ Autre`;
 
-Répondez avec le numéro correspondant.`,
+    case "Réseau informatique":
+      return `Très bien 👍
 
-    "Réseau informatique":
-
-`🌐 *RÉSEAU INFORMATIQUE*
-
-Quel type de réseau souhaitez-vous ?
+Quel type de réseau informatique souhaitez-vous ?
 
 1️⃣ Réseau entreprise
 2️⃣ Wi-Fi
 3️⃣ VLAN
 4️⃣ Fibre / liaison
 5️⃣ Baie informatique
-6️⃣ Autre
+6️⃣ Autre`;
 
-Répondez avec le numéro correspondant.`
+    default:
+      return null;
+  }
+}
 
+function choiceLabel(choice, service) {
+  const maps = {
+    "Vidéosurveillance": {
+      "1": "Maison", "2": "Bureau", "3": "Commerce",
+      "4": "Hôtel", "5": "Usine", "6": "Autre"
+    },
+    "Contrôle d'accès": {
+      "1": "Une porte", "2": "Plusieurs portes", "3": "Immeuble",
+      "4": "Hôtel", "5": "Entreprise", "6": "Autre"
+    },
+    "Alarme intrusion": {
+      "1": "Maison", "2": "Bureau", "3": "Commerce",
+      "4": "Hôtel", "5": "Usine", "6": "Autre"
+    },
+    "SSI / CMSI": {
+      "1": "Hôtel", "2": "Immeuble", "3": "Bureau", "4": "Usine",
+      "5": "Commerce", "6": "Établissement public", "7": "Autre"
+    },
+    "Motorisation de portail": {
+      "1": "Portail coulissant", "2": "Portail battant",
+      "3": "Portail industriel", "4": "Barrière automatique", "5": "Autre"
+    },
+    "Domotique": {
+      "1": "Éclairage", "2": "Climatisation", "3": "Sécurité",
+      "4": "Contrôle à distance", "5": "Hôtel / chambre",
+      "6": "Maison intelligente", "7": "Autre"
+    },
+    "Réseau informatique": {
+      "1": "Réseau entreprise", "2": "Wi-Fi", "3": "VLAN",
+      "4": "Fibre / liaison", "5": "Baie informatique", "6": "Autre"
+    }
   };
 
-  return questions[service] || null;
+  return maps[service]?.[choice] || choice;
 }
 
-// ======================================================
-// INTERPRETATION DES CHOIX
-// ======================================================
+function quoteRequestMessage(session) {
+  return `Parfait 👍
 
-function choiceLabel(
-  choice,
-  service
-) {
+Pour préparer votre demande de devis, indiquez-moi :
 
-  if (
-    service ===
-    "SSI / CMSI"
-  ) {
+📍 *La localisation du projet*
+📝 *Une courte description du besoin*
+🔢 *La quantité approximative* (caméras, portes, équipements, etc.)
 
-    return {
-
-      "1":
-        "Hôtel",
-
-      "2":
-        "Immeuble",
-
-      "3":
-        "Bureau",
-
-      "4":
-        "Usine",
-
-      "5":
-        "Commerce",
-
-      "6":
-        "Établissement public",
-
-      "7":
-        "Autre"
-
-    }[choice] || choice;
-
-  }
-
-  if (
-    service ===
-    "Motorisation de portail"
-  ) {
-
-    return {
-
-      "1":
-        "Portail coulissant",
-
-      "2":
-        "Portail battant",
-
-      "3":
-        "Portail industriel",
-
-      "4":
-        "Barrière automatique",
-
-      "5":
-        "Autre"
-
-    }[choice] || choice;
-
-  }
-
-  if (
-    service ===
-    "Domotique"
-  ) {
-
-    return {
-
-      "1":
-        "Éclairage",
-
-      "2":
-        "Climatisation",
-
-      "3":
-        "Sécurité",
-
-      "4":
-        "Contrôle à distance",
-
-      "5":
-        "Hôtel / chambre",
-
-      "6":
-        "Maison intelligente",
-
-      "7":
-        "Autre"
-
-    }[choice] || choice;
-
-  }
-
-  if (
-    service ===
-    "Réseau informatique"
-  ) {
-
-    return {
-
-      "1":
-        "Réseau entreprise",
-
-      "2":
-        "Wi-Fi",
-
-      "3":
-        "VLAN",
-
-      "4":
-        "Fibre / liaison",
-
-      "5":
-        "Baie informatique",
-
-      "6":
-        "Autre"
-
-    }[choice] || choice;
-
-  }
-
-  return {
-
-    "1":
-      "Maison",
-
-    "2":
-      "Bureau",
-
-    "3":
-      "Commerce",
-
-    "4":
-      "Hôtel",
-
-    "5":
-      "Usine",
-
-    "6":
-      "Autre"
-
-  }[choice] || choice;
-
+Vous pouvez répondre en une seule fois ou étape par étape.`;
 }
 
-// ======================================================
-// DEMANDE DEVIS
-// ======================================================
+async function processMessage(from, profileName, text) {
+  const session = getSession(from, profileName);
+  const message = String(text || "").trim();
 
-function quoteRequestMessage(
-  session
-) {
+  addHistory(session, "in", message);
 
-  return `📋 *DEMANDE DE DEVIS*
+  // Déclenchement initial amélioré — le reste du parcours est conservé.
+  if (isConversationStart(message)) {
+    session.state = "MENU";
+    session.service = null;
 
-Merci ${session.name}.
-
-Pour préparer votre devis, envoyez-nous :
-
-1️⃣ La localisation du site
-2️⃣ Une description du besoin
-3️⃣ La quantité approximative d'équipements si vous la connaissez
-
-Exemple :
-
-"Cocody, 12 caméras IP, NVR et installation complète"
-
-Un conseiller VisionProtection vous recontactera ensuite.`;
-
-}
-
-// ======================================================
-// TRAITEMENT DU MESSAGE
-// ======================================================
-
-async function processMessage(
-  from,
-  profileName,
-  text
-) {
-
-  const session =
-    getSession(
-      from,
-      profileName
-    );
-
-  const message =
-    text.trim();
-
-  const lower =
-    message.toLowerCase();
-
-  addHistory(
-    session,
-    "in",
-    message
-  );
-
-  // ====================================================
-  // RETOUR MENU
-  // ====================================================
-
-  if (
-
-    lower ===
-      "bonjour" ||
-
-    lower ===
-      "bjr" ||
-
-    lower ===
-      "bonsoir" ||
-
-    lower ===
-      "slt" ||
-
-    lower ===
-      "salut" ||
-
-    lower ===
-      "menu" ||
-
-    lower ===
-      "start" ||
-
-    lower ===
-      "0"
-
-  ) {
-
-    session.state =
-      "MENU";
-
-    session.service =
-      null;
-
-    const response =
-      mainMenu();
-
-    addHistory(
-      session,
-      "out",
-      response
-    );
-
+    const response = mainMenu();
+    addHistory(session, "out", response);
     return response;
   }
 
-  // ====================================================
-  // MENU
-  // ====================================================
-
-  if (
-    session.state ===
-    "MENU"
-  ) {
-
-    if (
-      !SERVICES[message]
-    ) {
-
-      const response =
-        `Je n'ai pas reconnu votre choix.
+  if (session.state === "MENU") {
+    if (!SERVICES[message]) {
+      const response = `Je n'ai pas reconnu votre choix.
 
 ${mainMenu()}`;
 
-      addHistory(
-        session,
-        "out",
-        response
-      );
-
+      addHistory(session, "out", response);
       return response;
     }
 
-    session.service =
-      SERVICES[message];
+    const service = SERVICES[message];
+    session.service = service;
 
-    // ==================================================
-    // DEMANDE DEVIS
-    // ==================================================
+    if (service === "Demande de devis") {
+      session.state = "QUOTE";
 
-    if (
-      message ===
-      "8"
-    ) {
-
-      session.state =
-        "QUOTE";
-
-      const response =
-        quoteRequestMessage(
-          session
-        );
-
-      addHistory(
-        session,
-        "out",
-        response
-      );
-
+      const response = quoteRequestMessage(session);
+      addHistory(session, "out", response);
       return response;
     }
 
-    // ==================================================
-    // CONSEILLER
-    // ==================================================
+    if (service === "Conseiller") {
+      session.state = "ADVISOR";
 
-    if (
-      message ===
-      "9"
-    ) {
+      const response = `Très bien 👍
 
-      session.state =
-        "ADVISOR";
+Décrivez-moi votre besoin ou votre projet. Un conseiller de VisionProtection & Informatique pourra ensuite vous répondre.`;
 
-      const response =
-`👨‍💼 *CONSEILLER VISIONPROTECTION*
-
-Votre demande a été enregistrée.
-
-Merci d'envoyer :
-
-• Votre nom
-• La localisation du site
-• Votre besoin
-
-Un conseiller VisionProtection pourra ensuite vous recontacter.`;
-
-      addHistory(
-        session,
-        "out",
-        response
-      );
-
+      addHistory(session, "out", response);
       return response;
     }
 
-    // ==================================================
-    // SERVICE NORMAL
-    // ==================================================
+    session.state = "SITE_TYPE";
 
-    session.state =
-      "SITE_TYPE";
+    const response = serviceQuestion(service) ||
+      `Très bien 👍
 
-    const response =
-      serviceQuestion(
-        session.service
-      ) ||
-`Merci.
+Décrivez-moi votre besoin.`;
 
-Votre besoin concerne :
-*${session.service}*
-
-Pouvez-vous décrire votre projet ?`;
-
-    addHistory(
-      session,
-      "out",
-      response
-    );
-
+    addHistory(session, "out", response);
     return response;
   }
 
-  // ====================================================
-  // TYPE DE SITE
-  // ====================================================
+  if (session.state === "SITE_TYPE") {
+    session.siteType = choiceLabel(message, session.service);
+    session.state = "LOCATION";
 
-  if (
-    session.state ===
-    "SITE_TYPE"
-  ) {
+    const response = `Merci 👍
 
-    session.siteType =
-      choiceLabel(
-        message,
-        session.service
-      );
+📍 Dans quelle ville ou commune se situe le projet ?`;
 
-    session.state =
-      "LOCATION";
-
-    const response =
-`Merci. 👍
-
-🏢 Type de site :
-*${session.siteType}*
-
-🔧 Service :
-*${session.service}*
-
-📍 Dans quelle ville ou commune se trouve le projet ?`;
-
-    addHistory(
-      session,
-      "out",
-      response
-    );
-
+    addHistory(session, "out", response);
     return response;
   }
 
-  // ====================================================
-  // LOCALISATION
-  // ====================================================
+  if (session.state === "LOCATION") {
+    session.location = message;
+    session.state = "PROJECT";
 
-  if (
-    session.state ===
-    "LOCATION"
-  ) {
+    const response = `Parfait 👍
 
-    session.location =
-      message;
-
-    session.state =
-      "PROJECT";
-
-    const response =
-`Très bien. 📍
-
-Localisation :
-*${session.location}*
-
-Décrivez brièvement votre besoin ou votre projet.
+📝 Décrivez brièvement votre projet ou votre besoin.
 
 Exemple :
+« Je souhaite installer 8 caméras extérieures avec enregistrement pendant 30 jours. »`;
 
-"Je souhaite installer 12 caméras IP avec NVR et installation complète."`;
-
-    addHistory(
-      session,
-      "out",
-      response
-    );
-
+    addHistory(session, "out", response);
     return response;
   }
 
-  // ====================================================
-  // DESCRIPTION PROJET
-  // ====================================================
+  if (session.state === "PROJECT") {
+    session.project = message;
+    session.state = "QUANTITY";
 
-  if (
-    session.state ===
-    "PROJECT"
-  ) {
+    const response = `Merci pour ces informations 👍
 
-    session.project =
-      message;
+🔢 Quelle est la quantité approximative souhaitée ?
 
-    session.state =
-      "QUANTITY";
+Exemple : 8 caméras, 2 portes, 1 portail, 20 prises réseau, etc.`;
 
-    const response =
-`Merci pour ces informations. 👍
-
-Quelle est la quantité approximative d'équipements souhaitée ?
-
-Si vous ne connaissez pas encore la quantité, répondez :
-
-*Je ne sais pas*`;
-
-    addHistory(
-      session,
-      "out",
-      response
-    );
-
+    addHistory(session, "out", response);
     return response;
   }
 
-  // ====================================================
-  // QUANTITE
-  // ====================================================
+  if (session.state === "QUANTITY") {
+    session.quantity = message;
+    session.state = "DELAY";
 
-  if (
-    session.state ===
-    "QUANTITY"
-  ) {
+    const response = `Très bien 👍
 
-    session.quantity =
-      message;
+⏱️ Quel est votre délai souhaité pour la réalisation du projet ?
 
-    session.state =
-      "DELAY";
+Exemple :
+• Urgent
+• Cette semaine
+• Ce mois-ci
+• Dans 1 à 3 mois
+• Pas encore défini`;
 
-    const response =
-`Parfait.
-
-⏱️ Quel est votre délai souhaité ?
-
-1️⃣ Urgent
-2️⃣ Cette semaine
-3️⃣ Ce mois-ci
-4️⃣ Plus tard
-5️⃣ Je ne sais pas`;
-
-    addHistory(
-      session,
-      "out",
-      response
-    );
-
+    addHistory(session, "out", response);
     return response;
   }
 
-  // ====================================================
-  // DELAI
-  // ====================================================
+  if (session.state === "DELAY") {
+    session.delay = message;
+    session.state = "DONE";
 
-  if (
-    session.state ===
-    "DELAY"
-  ) {
+    const response = `✅ *Demande enregistrée*
 
-    const delays = {
+Voici le récapitulatif :
 
-      "1":
-        "Urgent",
+🔐 Service : ${session.service}
+🏢 Type de site : ${session.siteType || "Non précisé"}
+📍 Localisation : ${session.location || "Non précisée"}
+📝 Projet : ${session.project || "Non précisé"}
+🔢 Quantité : ${session.quantity || "Non précisée"}
+⏱️ Délai : ${session.delay || "Non précisé"}
 
-      "2":
-        "Cette semaine",
+Merci pour votre confiance 🤝
 
-      "3":
-        "Ce mois-ci",
-
-      "4":
-        "Plus tard",
-
-      "5":
-        "À définir"
-
-    };
-
-    session.delay =
-      delays[message] ||
-      message;
-
-    session.state =
-      "DONE";
-
-    const response =
-`✅ *DEMANDE ENREGISTRÉE*
-
-👤 Prospect :
-${session.name}
-
-📱 Téléphone :
-${session.phone}
-
-🔧 Service :
-${session.service}
-
-🏢 Type de site :
-${session.siteType}
-
-📍 Localisation :
-${session.location}
-
-📝 Projet :
-${session.project}
-
-📦 Quantité :
-${session.quantity}
-
-⏱️ Délai :
-${session.delay}
-
-Merci pour votre confiance.
-
-Un conseiller de *VisionProtection & Informatique* vous recontactera pour finaliser votre demande.
+Un conseiller de VisionProtection & Informatique pourra vous contacter pour la suite.
 
 Tapez *MENU* pour revenir au menu principal.`;
 
-    addHistory(
-      session,
-      "out",
-      response
-    );
-
+    addHistory(session, "out", response);
     return response;
   }
 
-  // ====================================================
-  // DEMANDE DEVIS
-  // ====================================================
+  if (session.state === "QUOTE") {
+    session.project = message;
+    session.state = "LOCATION_QUOTE";
 
-  if (
-    session.state ===
-    "QUOTE"
-  ) {
+    const response = `Merci 👍
 
-    session.project =
-      message;
+📍 Dans quelle ville ou commune se situe le projet ?`;
 
-    session.state =
-      "LOCATION_QUOTE";
-
-    const response =
-`Merci pour votre demande de devis. 📋
-
-Dans quelle ville ou commune se trouve le projet ?`;
-
-    addHistory(
-      session,
-      "out",
-      response
-    );
-
+    addHistory(session, "out", response);
     return response;
   }
 
-  // ====================================================
-  // LOCALISATION DEVIS
-  // ====================================================
+  if (session.state === "LOCATION_QUOTE") {
+    session.location = message;
+    session.state = "DONE";
 
-  if (
-    session.state ===
-    "LOCATION_QUOTE"
-  ) {
+    const response = `✅ *Demande de devis enregistrée*
 
-    session.location =
-      message;
+🔐 Service : Demande de devis
+📍 Localisation : ${session.location}
+📝 Projet : ${session.project || "Non précisé"}
 
-    session.state =
-      "DONE";
+Merci pour votre demande.
 
-    const response =
-`✅ *DEMANDE DE DEVIS ENREGISTRÉE*
+Notre équipe pourra revenir vers vous pour obtenir les informations complémentaires et établir votre devis.
 
-👤 ${session.name}
+Tapez *MENU* pour revenir au menu principal.`;
 
-📱 ${session.phone}
-
-📍 ${session.location}
-
-📝 ${session.project}
-
-Un conseiller VisionProtection vous recontactera pour préparer votre devis.
-
-Tapez *MENU* pour voir nos autres services.`;
-
-    addHistory(
-      session,
-      "out",
-      response
-    );
-
+    addHistory(session, "out", response);
     return response;
   }
 
-  // ====================================================
-  // CONSEILLER
-  // ====================================================
+  if (session.state === "ADVISOR") {
+    session.project = message;
+    session.state = "DONE";
 
-  if (
-    session.state ===
-    "ADVISOR"
-  ) {
-
-    session.project =
-      message;
-
-    session.state =
-      "DONE";
-
-    const response =
-`Merci.
-
-Votre demande a été enregistrée pour le parcours conseiller. 👨‍💼
-
-📱 Téléphone :
-${session.phone}
+    const response = `✅ Votre demande a bien été transmise.
 
 📝 Besoin :
 ${session.project}
 
-Un conseiller VisionProtection vous recontactera.`;
+Un conseiller de VisionProtection & Informatique pourra vous répondre.
 
-    addHistory(
-      session,
-      "out",
-      response
-    );
+Tapez *MENU* pour revenir au menu principal.`;
 
+    addHistory(session, "out", response);
     return response;
   }
 
-  // ====================================================
-  // DEMANDE DEJA TERMINEE
-  // ====================================================
+  if (session.state === "DONE") {
+    const response = `Votre demande est déjà enregistrée. 👍
 
-  if (
-    session.state ===
-    "DONE"
-  ) {
+Tapez *MENU* pour recommencer une nouvelle demande ou *8* pour faire une demande de devis.`;
 
-    const response =
-`Votre demande est déjà enregistrée. ✅
-
-Tapez :
-
-*MENU*
-
-pour choisir un autre service.
-
-Ou :
-
-*8*
-
-pour une nouvelle demande de devis.`;
-
-    addHistory(
-      session,
-      "out",
-      response
-    );
-
+    addHistory(session, "out", response);
     return response;
   }
 
-  // ====================================================
-  // SECURITE
-  // ====================================================
+  session.state = "MENU";
 
-  session.state =
-    "MENU";
-
-  const response =
-    mainMenu();
-
-  addHistory(
-    session,
-    "out",
-    response
-  );
-
+  const response = mainMenu();
+  addHistory(session, "out", response);
   return response;
 }
 
-// ======================================================
-// PAGE ACCUEIL
-// ======================================================
+/* =========================
+   WEBHOOK META - VERIFICATION
+   ========================= */
+app.get("/webhook", (req, res) => {
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
 
-app.get(
-  "/",
-  (req, res) => {
-
-    res.json({
-
-      status:
-        "OK",
-
-      service:
-        "VisionProtection WhatsApp Webhook",
-
-      version:
-        "2.5.1",
-
-      api:
-        GRAPH_VERSION,
-
-      webhook:
-        "/webhook",
-
-      crm:
-        "session-memory"
-
-    });
-
+  if (mode === "subscribe" && token === VERIFY_TOKEN) {
+    console.log("WEBHOOK META VERIFIE");
+    return res.status(200).send(challenge);
   }
-);
 
-// ======================================================
-// VERIFICATION META
-// ======================================================
+  return res.sendStatus(403);
+});
 
-app.get(
-  "/webhook",
-  (req, res) => {
+/* =========================
+   WEBHOOK META - MESSAGES
+   ========================= */
+app.post("/webhook", (req, res) => {
+  console.log("\n===== WEBHOOK WHATSAPP =====");
+  console.log(JSON.stringify(req.body, null, 2));
 
-    const mode =
-      req.query["hub.mode"];
+  // Réponse immédiate à Meta.
+  res.sendStatus(200);
 
-    const token =
-      req.query["hub.verify_token"];
+  try {
+    const entry = req.body?.entry || [];
 
-    const challenge =
-      req.query["hub.challenge"];
+    for (const item of entry) {
+      const changes = item?.changes || [];
 
-    console.log(
-      "Demande de vérification Meta reçue"
-    );
+      for (const change of changes) {
+        const value = change?.value;
 
-    if (
+        if (!value) continue;
 
-      mode ===
-        "subscribe" &&
-
-      token ===
-        VERIFY_TOKEN
-
-    ) {
-
-      console.log(
-        "Webhook Meta vérifié avec succès"
-      );
-
-      return res
-        .status(200)
-        .send(challenge);
-    }
-
-    console.log(
-      "Échec vérification webhook"
-    );
-
-    return res.sendStatus(
-      403
-    );
-
-  }
-);
-
-// ======================================================
-// RECEPTION WHATSAPP
-// ======================================================
-
-app.post(
-  "/webhook",
-  async (req, res) => {
-
-    console.log(
-      "================================="
-    );
-
-    console.log(
-      "MESSAGE WHATSAPP REÇU"
-    );
-
-    console.log(
-      "================================="
-    );
-
-    console.log(
-      JSON.stringify(
-        req.body,
-        null,
-        2
-      )
-    );
-
-    /*
-     * IMPORTANT :
-     * Meta doit recevoir HTTP 200 rapidement.
-     */
-
-    res.sendStatus(
-      200
-    );
-
-    try {
-
-      const entry =
-        req.body?.entry;
-
-      if (
-        !entry?.length
-      ) {
-
-        return;
-      }
-
-      const changes =
-        entry[0]?.changes;
-
-      if (
-        !changes?.length
-      ) {
-
-        return;
-      }
-
-      const value =
-        changes[0]?.value;
-
-      // ==================================================
-      // STATUTS
-      // ==================================================
-
-      if (
-        !value?.messages?.length
-      ) {
-
-        if (
-          value?.statuses?.length
-        ) {
-
-          console.log(
-            "Statut WhatsApp :",
-            value.statuses.map(
-              status => ({
-
-                id:
-                  status.id,
-
-                status:
-                  status.status,
-
-                recipient:
-                  status.recipient_id
-
-              })
-            )
-          );
-
+        // Les statuses sent/delivered/read ne sont pas des messages entrants.
+        if (!value.messages || !Array.isArray(value.messages) || value.messages.length === 0) {
+          if (value.statuses) {
+            console.log(
+              "STATUS WHATSAPP :",
+              JSON.stringify(value.statuses, null, 2)
+            );
+          }
+          continue;
         }
 
-        return;
-      }
+        const contacts = value.contacts || [];
 
-      // ==================================================
-      // MESSAGE
-      // ==================================================
+        for (const message of value.messages) {
+          const from = message.from;
+          const contact =
+            contacts.find((c) => c.wa_id === from) ||
+            contacts[0] ||
+            {};
 
-      const message =
-        value.messages[0];
+          const profileName = contact?.profile?.name || "";
+          let incomingText = "";
 
-      const from =
-        message.from;
+          if (message.type === "text") {
+            incomingText = message.text?.body || "";
+          } else if (message.type === "interactive") {
+            const interactive = message.interactive || {};
 
-      const profileName =
-        value.contacts?.[0]
-          ?.profile?.name ||
-        "Prospect";
+            if (interactive.type === "button_reply") {
+              incomingText =
+                interactive.button_reply?.id ||
+                interactive.button_reply?.title ||
+                "";
+            } else if (interactive.type === "list_reply") {
+              incomingText =
+                interactive.list_reply?.id ||
+                interactive.list_reply?.title ||
+                "";
+            }
+          } else if (message.type === "button") {
+            incomingText =
+              message.button?.text ||
+              message.button?.payload ||
+              "";
+          }
 
-      let messageText =
-        "";
+          if (!incomingText) {
+            console.log("Message non textuel non traité :", message.type);
+            continue;
+          }
 
-      // ==================================================
-      // MESSAGE TEXTE
-      // ==================================================
-
-      if (
-
-        message.type ===
-          "text" &&
-
-        message.text
-
-      ) {
-
-        messageText =
-          message.text.body ||
-          "";
-
-      }
-
-      // ==================================================
-      // MESSAGE INTERACTIF
-      // ==================================================
-
-      else if (
-        message.type ===
-        "interactive"
-      ) {
-
-        const interactive =
-          message.interactive;
-
-        if (
-          interactive
-            ?.button_reply
-            ?.id
-        ) {
-
-          messageText =
-            interactive
-              .button_reply
-              .id;
-
+          processMessage(from, profileName, incomingText)
+            .then((response) => sendText(from, response))
+            .then((result) => {
+              console.log(
+                "REPONSE WHATSAPP ENVOYEE :",
+                JSON.stringify(result, null, 2)
+              );
+            })
+            .catch((error) => {
+              console.error(
+                "ERREUR TRAITEMENT / ENVOI WHATSAPP :",
+                error.response?.data || error.message
+              );
+            });
         }
-
-        else if (
-          interactive
-            ?.list_reply
-            ?.id
-        ) {
-
-          messageText =
-            interactive
-              .list_reply
-              .id;
-
-        }
-
       }
-
-      // ==================================================
-      // MESSAGE NON PRIS EN CHARGE
-      // ==================================================
-
-      if (
-        !messageText
-      ) {
-
-        console.log(
-          "Message non textuel reçu :",
-          message.type
-        );
-
-        return;
-      }
-
-      console.log(
-        "Prospect :",
-        normalizeForApi(from)
-      );
-
-      console.log(
-        "Message :",
-        messageText
-      );
-
-      // ==================================================
-      // TRAITEMENT
-      // ==================================================
-
-      const responseText =
-        await processMessage(
-          from,
-          profileName,
-          messageText
-        );
-
-      if (
-        !responseText
-      ) {
-
-        return;
-      }
-
-      // ==================================================
-      // REPONSE WHATSAPP
-      // ==================================================
-
-      const result =
-        await sendText(
-          from,
-          responseText
-        );
-
-      console.log(
-        "Réponse WhatsApp envoyée à",
-        normalizeForApi(from)
-      );
-
-      console.log(
-        "Meta message result :",
-        JSON.stringify(
-          result,
-          null,
-          2
-        )
-      );
-
     }
-
-    catch (
-      error
-    ) {
-
-      console.error(
-        "Erreur traitement WhatsApp :",
-
-        error.response?.data ||
-        error.message
-      );
-
-    }
-
+  } catch (error) {
+    console.error("ERREUR WEBHOOK :", error);
   }
-);
+});
 
-// ======================================================
-// CRM - LISTE PROSPECTS
-// ======================================================
+/* =========================
+   CRM
+   ========================= */
+app.get("/crm/prospects", (req, res) => {
+  const prospects = Array.from(sessions.values()).map((session) => ({
+    ...session
+  }));
 
-app.get(
-  "/crm/prospects",
-  (req, res) => {
+  res.json({
+    success: true,
+    count: prospects.length,
+    prospects
+  });
+});
 
-    const prospects =
-      Array.from(
-        sessions.values()
-      ).map(
-        session => ({
+app.get("/crm/prospect/:phone", (req, res) => {
+  const phone = req.params.phone;
+  const session = sessions.get(phone);
 
-          phone:
-            session.phone,
-
-          name:
-            session.name,
-
-          service:
-            session.service,
-
-          siteType:
-            session.siteType,
-
-          location:
-            session.location,
-
-          project:
-            session.project,
-
-          quantity:
-            session.quantity,
-
-          delay:
-            session.delay,
-
-          state:
-            session.state,
-
-          createdAt:
-            session.createdAt,
-
-          updatedAt:
-            session.updatedAt
-
-        })
-      );
-
-    res.json({
-
-      version:
-        "2.5.1",
-
-      count:
-        prospects.length,
-
-      prospects:
-        prospects
-
+  if (!session) {
+    return res.status(404).json({
+      success: false,
+      message: "Prospect introuvable"
     });
-
   }
-);
 
-// ======================================================
-// CRM - PROSPECT PAR NUMERO
-// ======================================================
+  return res.json({
+    success: true,
+    prospect: session
+  });
+});
 
-app.get(
-  "/crm/prospect/:phone",
-  (req, res) => {
+app.get("/crm/stats", (req, res) => {
+  const prospects = Array.from(sessions.values());
+  const byService = {};
 
-    const phone =
-      normalizeForApi(
-        req.params.phone
-      );
-
-    const session =
-      sessions.get(
-        phone
-      );
-
-    if (
-      !session
-    ) {
-
-      return res
-        .status(404)
-        .json({
-
-          error:
-            "Prospect introuvable"
-
-        });
-
-    }
-
-    res.json(
-      session
-    );
-
+  for (const session of prospects) {
+    const service = session.service || "Non défini";
+    byService[service] = (byService[service] || 0) + 1;
   }
-);
 
-// ======================================================
-// CRM - STATISTIQUES
-// ======================================================
+  res.json({
+    success: true,
+    totalProspects: prospects.length,
+    activeConversations: prospects.filter(
+      (p) => p.state !== "DONE"
+    ).length,
+    completedConversations: prospects.filter(
+      (p) => p.state === "DONE"
+    ).length,
+    byService
+  });
+});
 
-app.get(
-  "/crm/stats",
-  (req, res) => {
+/* =========================
+   HEALTH CHECK
+   ========================= */
+app.get("/", (req, res) => {
+  res.json({
+    success: true,
+    application: "VisionProtection WhatsApp CRM",
+    version: "2.5.2",
+    graphApi: GRAPH_VERSION,
+    webhook: "/webhook",
+    crm: "/crm/prospects",
+    stats: "/crm/stats",
+    status: "online"
+  });
+});
 
-    const all =
-      Array.from(
-        sessions.values()
-      );
-
-    const services =
-      {};
-
-    for (
-      const session
-      of all
-    ) {
-
-      const service =
-        session.service ||
-        "Non défini";
-
-      services[service] =
-        (
-          services[service] ||
-          0
-        ) + 1;
-
-    }
-
-    const states =
-      all.reduce(
-        (
-          result,
-          session
-        ) => {
-
-          result[
-            session.state
-          ] =
-            (
-              result[
-                session.state
-              ] ||
-              0
-            ) + 1;
-
-          return result;
-
-        },
-        {}
-      );
-
-    res.json({
-
-      version:
-        "2.5.1",
-
-      totalProspects:
-        all.length,
-
-      services:
-        services,
-
-      states:
-        states
-
-    });
-
-  }
-);
-
-// ======================================================
-// DEMARRAGE SERVEUR
-// ======================================================
-
-app.listen(
-  PORT,
-  "0.0.0.0",
-  () => {
-
-    console.log(
-      "================================="
-    );
-
-    console.log(
-      "VisionProtection WhatsApp CRM"
-    );
-
-    console.log(
-      "Version : 2.5.1"
-    );
-
-    console.log(
-      "================================="
-    );
-
-    console.log(
-      `Serveur démarré sur le port ${PORT}`
-    );
-
-    console.log(
-      `Graph API : ${GRAPH_VERSION}`
-    );
-
-    console.log(
-      "Webhook : /webhook"
-    );
-
-    console.log(
-      "CRM : /crm/prospects"
-    );
-
-    console.log(
-      "Stats : /crm/stats"
-    );
-
-    console.log(
-      "================================="
-    );
-
-  }
-);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log("VisionProtection WhatsApp CRM");
+  console.log("Version : 2.5.2");
+  console.log(`Serveur démarré sur le port ${PORT}`);
+  console.log(`Graph API : ${GRAPH_VERSION}`);
+  console.log("Webhook : /webhook");
+  console.log("CRM : /crm/prospects");
+  console.log("Stats : /crm/stats");
+});
