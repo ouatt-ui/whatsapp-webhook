@@ -1,5 +1,6 @@
 const express = require("express");
 const axios = require("axios");
+const mysql = require("mysql2/promise");
 
 const app = express();
 app.use(express.json());
@@ -12,6 +13,68 @@ const GRAPH_VERSION = "v26.0";
 const WHATSAPP_API_URL = `https://graph.facebook.com/${GRAPH_VERSION}/${PHONE_NUMBER_ID}/messages`;
 
 const sessions = new Map();
+
+// MYSQL / AIVEN
+const dbConfig = {
+  host: process.env.Host || process.env.DB_HOST,
+  port: Number(process.env.Port || process.env.DB_PORT || 3306),
+  user: process.env.User || process.env.DB_USER,
+  password: process.env.Password || process.env.DB_PASSWORD,
+  database: process.env.Database || process.env.DB_NAME || "defaultdb",
+  ssl: { minVersion: "TLSv1.2" },
+  waitForConnections: true, connectionLimit: 5, queueLimit: 0
+};
+let pool = null;
+let dbReady = false;
+
+async function initDatabase() {
+  if (!dbConfig.host || !dbConfig.user || !dbConfig.password) { console.log("MYSQL : variables absentes. Mode mémoire."); return; }
+  try {
+    pool = mysql.createPool(dbConfig);
+    await pool.query(`CREATE TABLE IF NOT EXISTS prospects (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, phone VARCHAR(30) NOT NULL, name VARCHAR(255) NULL,
+      state VARCHAR(50) NULL, service VARCHAR(255) NULL, site_type VARCHAR(255) NULL, location VARCHAR(255) NULL,
+      project TEXT NULL, quantity VARCHAR(100) NULL, delay VARCHAR(255) NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id), UNIQUE KEY uq_prospects_phone (phone)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS conversation_messages (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, prospect_id BIGINT UNSIGNED NOT NULL, phone VARCHAR(30) NOT NULL,
+      direction ENUM('in','out') NOT NULL, message TEXT NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id), KEY idx_messages_phone (phone), KEY idx_messages_prospect (prospect_id),
+      CONSTRAINT fk_messages_prospect FOREIGN KEY (prospect_id) REFERENCES prospects(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    await pool.query("SELECT 1"); dbReady = true;
+    console.log("MYSQL : connexion Aiven opérationnelle.");
+    console.log("MYSQL : tables prospects et conversation_messages vérifiées.");
+  } catch (e) { dbReady=false; console.error("MYSQL : connexion impossible :", e.message); console.log("MYSQL : le CRM continue en mode mémoire."); }
+}
+
+async function saveProspect(session) {
+  if (!dbReady || !pool) return;
+  await pool.query(`INSERT INTO prospects (phone,name,state,service,site_type,location,project,quantity,delay)
+    VALUES (?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name),state=VALUES(state),service=VALUES(service),
+    site_type=VALUES(site_type),location=VALUES(location),project=VALUES(project),quantity=VALUES(quantity),delay=VALUES(delay),updated_at=CURRENT_TIMESTAMP`,
+    [session.phone,session.name||null,session.state||null,session.service||null,session.siteType||null,session.location||null,session.project||null,session.quantity||null,session.delay||null]);
+}
+async function getProspectId(phone) {
+  if (!dbReady || !pool) return null; const [r]=await pool.query("SELECT id FROM prospects WHERE phone=? LIMIT 1",[phone]); return r.length?r[0].id:null;
+}
+async function saveMessage(session,direction,text) {
+  if (!dbReady || !pool || !text) return;
+  try { await saveProspect(session); const id=await getProspectId(session.phone); if(id) await pool.query("INSERT INTO conversation_messages (prospect_id,phone,direction,message) VALUES (?,?,?,?)",[id,session.phone,direction,text]); }
+  catch(e){ console.error("MYSQL : erreur sauvegarde message :",e.message); }
+}
+async function loadProspect(phone) {
+  if (!dbReady || !pool) return null;
+  try {
+    const [r]=await pool.query("SELECT * FROM prospects WHERE phone=? LIMIT 1",[phone]); if(!r.length) return null; const p=r[0];
+    const [m]=await pool.query("SELECT direction,message,created_at FROM conversation_messages WHERE phone=? ORDER BY id DESC LIMIT 100",[phone]);
+    return {phone:p.phone,name:p.name||"",state:p.state||"MENU",service:p.service||null,siteType:p.site_type||null,location:p.location||null,project:p.project||null,quantity:p.quantity||null,delay:p.delay||null,history:m.reverse().map(x=>({direction:x.direction,text:x.message,at:x.created_at})),createdAt:p.created_at,updatedAt:p.updated_at};
+  } catch(e){ console.error("MYSQL : erreur chargement :",e.message); return null; }
+}
+
 
 const SERVICES = {
   "1": "Vidéosurveillance",
@@ -57,34 +120,12 @@ function isConversationStart(text) {
   );
 }
 
-function getSession(phone, profileName = "") {
-  const key = String(phone);
-
-  if (!sessions.has(key)) {
-    sessions.set(key, {
-      phone: key,
-      name: profileName || "",
-      state: "MENU",
-      service: null,
-      siteType: null,
-      location: null,
-      project: null,
-      quantity: null,
-      delay: null,
-      history: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    });
-  }
-
-  const session = sessions.get(key);
-
-  if (profileName && !session.name) {
-    session.name = profileName;
-  }
-
-  session.updatedAt = new Date().toISOString();
-  return session;
+async function getSession(phone, profileName = "") {
+  if (sessions.has(phone)) { const s=sessions.get(phone); if(profileName&&!s.name)s.name=profileName; return s; }
+  const stored=await loadProspect(phone);
+  if(stored){ if(profileName&&!stored.name)stored.name=profileName; sessions.set(phone,stored); return stored; }
+  const session={phone,name:profileName||"",state:"MENU",service:null,siteType:null,location:null,project:null,quantity:null,delay:null,history:[],createdAt:new Date(),updatedAt:new Date()};
+  sessions.set(phone,session); await saveProspect(session); return session;
 }
 
 function addHistory(session, direction, text) {
@@ -295,7 +336,7 @@ Vous pouvez répondre en une seule fois ou étape par étape.`;
 }
 
 async function processMessage(from, profileName, text) {
-  const session = getSession(from, profileName);
+  const session = await getSession(from, profileName);
   const message = String(text || "").trim();
 
   addHistory(session, "in", message);
@@ -674,7 +715,8 @@ app.get("/", (req, res) => {
   res.json({
     success: true,
     application: "VisionProtection WhatsApp CRM",
-    version: "2.5.2",
+    version: "2.5.2-mysql",
+    database: dbReady ? "mysql-connected" : "memory-fallback",
     graphApi: GRAPH_VERSION,
     webhook: "/webhook",
     crm: "/crm/prospects",
@@ -682,6 +724,9 @@ app.get("/", (req, res) => {
     status: "online"
   });
 });
+
+app.get("/crm/mysql-prospects", async (req,res)=>{ if(!dbReady||!pool)return res.json({database:"memory-fallback"}); const [rows]=await pool.query("SELECT * FROM prospects ORDER BY updated_at DESC"); res.json({database:"mysql",count:rows.length,prospects:rows}); });
+app.get("/crm/mysql-stats", async (req,res)=>{ if(!dbReady||!pool)return res.json({database:"memory-fallback"}); const [[t]]=await pool.query("SELECT COUNT(*) total_prospects, SUM(state='DONE') demandes_terminees FROM prospects"); const [services]=await pool.query("SELECT service,COUNT(*) total FROM prospects WHERE service IS NOT NULL GROUP BY service ORDER BY total DESC"); res.json({database:"mysql",total_prospects:Number(t.total_prospects||0),demandes_terminees:Number(t.demandes_terminees||0),par_service:services}); });
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log("VisionProtection WhatsApp CRM");
