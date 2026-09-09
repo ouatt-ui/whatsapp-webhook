@@ -657,55 +657,96 @@ app.post("/webhook", (req, res) => {
 /* =========================
    CRM
    ========================= */
-app.get("/crm/prospects", (req, res) => {
-  const prospects = Array.from(sessions.values()).map((session) => ({
-    ...session
-  }));
+app.get("/crm/prospects", async (req, res) => {
+  try {
+    if (dbReady && pool) {
+      const [rows] = await pool.query(
+        "SELECT id, phone, name, state, service, site_type, location, project, quantity, delay, created_at, updated_at FROM prospects ORDER BY updated_at DESC"
+      );
+      return res.json({ success: true, count: rows.length, prospects: rows, database: "mysql" });
+    }
 
-  res.json({
-    success: true,
-    count: prospects.length,
-    prospects
-  });
+    const prospects = Array.from(sessions.values()).map((session) => ({ ...session }));
+    return res.json({ success: true, count: prospects.length, prospects, database: "memory-fallback" });
+  } catch (e) {
+    console.error("CRM MYSQL /prospects :", e.message);
+    return res.status(500).json({ success: false, message: e.message });
+  }
 });
 
-app.get("/crm/prospect/:phone", (req, res) => {
+app.get("/crm/prospect/:phone", async (req, res) => {
   const phone = req.params.phone;
-  const session = sessions.get(phone);
 
-  if (!session) {
-    return res.status(404).json({
-      success: false,
-      message: "Prospect introuvable"
-    });
+  try {
+    if (dbReady && pool) {
+      const prospect = await loadProspect(phone);
+      if (!prospect) {
+        return res.status(404).json({ success: false, message: "Prospect introuvable" });
+      }
+      return res.json({ success: true, prospect, database: "mysql" });
+    }
+
+    const session = sessions.get(phone);
+    if (!session) {
+      return res.status(404).json({ success: false, message: "Prospect introuvable" });
+    }
+
+    return res.json({ success: true, prospect: session, database: "memory-fallback" });
+  } catch (e) {
+    console.error("CRM MYSQL /prospect :", e.message);
+    return res.status(500).json({ success: false, message: e.message });
   }
-
-  return res.json({
-    success: true,
-    prospect: session
-  });
 });
 
-app.get("/crm/stats", (req, res) => {
-  const prospects = Array.from(sessions.values());
-  const byService = {};
+app.get("/crm/stats", async (req, res) => {
+  try {
+    if (dbReady && pool) {
+      const [[t]] = await pool.query(`
+        SELECT
+          COUNT(*) AS totalProspects,
+          SUM(state <> 'DONE' OR state IS NULL) AS activeConversations,
+          SUM(state = 'DONE') AS completedConversations
+        FROM prospects
+      `);
+      const [services] = await pool.query(`
+        SELECT COALESCE(service, 'Non défini') AS service, COUNT(*) AS total
+        FROM prospects
+        GROUP BY service
+        ORDER BY total DESC
+      `);
 
-  for (const session of prospects) {
-    const service = session.service || "Non défini";
-    byService[service] = (byService[service] || 0) + 1;
+      const byService = {};
+      for (const row of services) byService[row.service] = Number(row.total);
+
+      return res.json({
+        success: true,
+        totalProspects: Number(t.totalProspects || 0),
+        activeConversations: Number(t.activeConversations || 0),
+        completedConversations: Number(t.completedConversations || 0),
+        byService,
+        database: "mysql"
+      });
+    }
+
+    const prospects = Array.from(sessions.values());
+    const byService = {};
+    for (const session of prospects) {
+      const service = session.service || "Non défini";
+      byService[service] = (byService[service] || 0) + 1;
+    }
+
+    return res.json({
+      success: true,
+      totalProspects: prospects.length,
+      activeConversations: prospects.filter((p) => p.state !== "DONE").length,
+      completedConversations: prospects.filter((p) => p.state === "DONE").length,
+      byService,
+      database: "memory-fallback"
+    });
+  } catch (e) {
+    console.error("CRM MYSQL /stats :", e.message);
+    return res.status(500).json({ success: false, message: e.message });
   }
-
-  res.json({
-    success: true,
-    totalProspects: prospects.length,
-    activeConversations: prospects.filter(
-      (p) => p.state !== "DONE"
-    ).length,
-    completedConversations: prospects.filter(
-      (p) => p.state === "DONE"
-    ).length,
-    byService
-  });
 });
 
 /* =========================
@@ -728,12 +769,18 @@ app.get("/", (req, res) => {
 app.get("/crm/mysql-prospects", async (req,res)=>{ if(!dbReady||!pool)return res.json({database:"memory-fallback"}); const [rows]=await pool.query("SELECT * FROM prospects ORDER BY updated_at DESC"); res.json({database:"mysql",count:rows.length,prospects:rows}); });
 app.get("/crm/mysql-stats", async (req,res)=>{ if(!dbReady||!pool)return res.json({database:"memory-fallback"}); const [[t]]=await pool.query("SELECT COUNT(*) total_prospects, SUM(state='DONE') demandes_terminees FROM prospects"); const [services]=await pool.query("SELECT service,COUNT(*) total FROM prospects WHERE service IS NOT NULL GROUP BY service ORDER BY total DESC"); res.json({database:"mysql",total_prospects:Number(t.total_prospects||0),demandes_terminees:Number(t.demandes_terminees||0),par_service:services}); });
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log("VisionProtection WhatsApp CRM");
-  console.log("Version : 2.5.2");
-  console.log(`Serveur démarré sur le port ${PORT}`);
-  console.log(`Graph API : ${GRAPH_VERSION}`);
-  console.log("Webhook : /webhook");
-  console.log("CRM : /crm/prospects");
-  console.log("Stats : /crm/stats");
-});
+initDatabase()
+  .catch((error) => {
+    console.error("MYSQL : erreur initialisation :", error.message);
+  })
+  .finally(() => {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log("VisionProtection WhatsApp CRM");
+      console.log("Version : 2.5.2");
+      console.log(`Serveur démarré sur le port ${PORT}`);
+      console.log(`Graph API : ${GRAPH_VERSION}`);
+      console.log("Webhook : /webhook");
+      console.log("CRM : /crm/prospects");
+      console.log("Stats : /crm/stats");
+    });
+  });
