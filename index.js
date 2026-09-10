@@ -21,7 +21,7 @@ const dbConfig = {
   user: process.env.User || process.env.DB_USER,
   password: process.env.Password || process.env.DB_PASSWORD,
   database: process.env.Database || process.env.DB_NAME || "defaultdb",
-  ssl: { minVersion: "TLSv1.2" },
+  ssl: { minVersion: "TLSv1.2", rejectUnauthorized: false },
   waitForConnections: true, connectionLimit: 5, queueLimit: 0
 };
 let pool = null;
