@@ -21,7 +21,13 @@ const dbConfig = {
   user: process.env.User || process.env.DB_USER,
   password: process.env.Password || process.env.DB_PASSWORD,
   database: process.env.Database || process.env.DB_NAME || "defaultdb",
-  ssl: { minVersion: "TLSv1.2", rejectUnauthorized: false },
+  ssl: {
+    minVersion: "TLSv1.2",
+    rejectUnauthorized: true,
+    ca: process.env.AIVEN_CA_CERT
+      ? process.env.AIVEN_CA_CERT.replace(/\\n/g, "\n")
+      : undefined
+  },
   waitForConnections: true, connectionLimit: 5, queueLimit: 0
 };
 let pool = null;
@@ -30,6 +36,7 @@ let dbReady = false;
 async function initDatabase() {
   if (!dbConfig.host || !dbConfig.user || !dbConfig.password) { console.log("MYSQL : variables absentes. Mode mémoire."); return; }
   try {
+    console.log("MYSQL : certificat CA Aiven " + (process.env.AIVEN_CA_CERT ? "présent." : "absent."));
     pool = mysql.createPool(dbConfig);
     await pool.query(`CREATE TABLE IF NOT EXISTS prospects (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, phone VARCHAR(30) NOT NULL, name VARCHAR(255) NULL,
