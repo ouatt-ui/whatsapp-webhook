@@ -1,12 +1,18 @@
-# VisionProtection WhatsApp CRM v2.5.2 + MySQL/Aiven
+# VisionProtection WhatsApp CRM v2.5.3
 
-Conserve le parcours WhatsApp v2.5.2 et ajoute la persistance Aiven MySQL.
+Package GitHub/Render prêt à déployer.
 
-Render : `npm install` puis `npm start`.
-Variables : META_VERIFY_TOKEN, WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, Host, Port, User, Password, Database.
+## Important
+La séquence WhatsApp v2.5.2 est conservée. Cette version ajoute la persistance MySQL/Aiven des prospects et des messages, plus les notes commerciales.
 
-Tables créées automatiquement : `prospects`, `conversation_messages`.
+## Render variables
+DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME, AIVEN_CA_CERT
+META_VERIFY_TOKEN, WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID
 
-Vérification : `/` ; `/crm/prospects` ; `/crm/stats`. Deux routes de diagnostic MySQL sont aussi disponibles : `/crm/mysql-prospects` et `/crm/mysql-stats`.
+Les anciennes variables Host/Port/User/Password/Database restent compatibles.
 
-Ne jamais publier les secrets Meta ou Aiven dans GitHub.
+## Render
+Build: npm install
+Start: npm start
+
+Ne jamais mettre les secrets dans GitHub.
