@@ -1,0 +1,1231 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>VisionProtection CRM</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #172033;
+}
+
+/* HEADER */
+.header {
+    background: #123b68;
+    color: white;
+    padding: 18px 25px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.header h1 {
+    margin: 0;
+    font-size: 22px;
+}
+
+.header span {
+    font-size: 13px;
+    opacity: .8;
+}
+
+/* CONTENEUR */
+.container {
+    max-width: 1400px;
+    margin: auto;
+    padding: 25px;
+}
+
+/* STATISTIQUES */
+.stats {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 15px;
+    margin-bottom: 25px;
+}
+
+.card {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.07);
+}
+
+.card-title {
+    color: #667085;
+    font-size: 13px;
+}
+
+.card-number {
+    font-size: 30px;
+    font-weight: bold;
+    margin-top: 8px;
+}
+
+/* BARRE OUTILS */
+.toolbar {
+    background: white;
+    padding: 15px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+input,
+select,
+button,
+textarea {
+    font-family: inherit;
+    font-size: 14px;
+    border-radius: 7px;
+    padding: 10px;
+}
+
+input,
+select,
+textarea {
+    border: 1px solid #ccd4df;
+}
+
+.search {
+    flex: 1;
+    min-width: 250px;
+}
+
+button {
+    border: none;
+    cursor: pointer;
+    background: #123b68;
+    color: white;
+}
+
+button:hover {
+    opacity: .9;
+}
+
+button.secondary {
+    background: #e8eef5;
+    color: #17324f;
+}
+
+/* TABLE */
+.panel {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.07);
+}
+
+.panel h2 {
+    margin-top: 0;
+}
+
+.table-container {
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th,
+td {
+    padding: 12px 10px;
+    border-bottom: 1px solid #edf0f4;
+    text-align: left;
+    font-size: 14px;
+}
+
+th {
+    background: #f7f9fc;
+}
+
+.status {
+    display: inline-block;
+    padding: 5px 9px;
+    border-radius: 20px;
+    background: #edf3f8;
+    font-size: 12px;
+}
+
+/* MODAL */
+.modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.65);
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 1000;
+}
+
+.modal.show {
+    display: flex;
+}
+
+.modal-content {
+    background: white;
+    width: 100%;
+    max-width: 850px;
+    max-height: 90vh;
+    overflow-y: auto;
+    border-radius: 14px;
+    padding: 25px;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h2 {
+    margin: 0;
+}
+
+.info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+}
+
+.info-box {
+    padding: 12px;
+    background: #f7f9fc;
+    border-radius: 8px;
+}
+
+.info-label {
+    font-size: 11px;
+    color: #667085;
+    margin-bottom: 5px;
+}
+
+.info-value {
+    font-weight: bold;
+}
+
+/* MESSAGES */
+.message {
+    padding: 10px 13px;
+    border-radius: 10px;
+    margin: 8px 0;
+    max-width: 80%;
+    white-space: pre-wrap;
+}
+
+.message.incoming {
+    background: #edf2f7;
+}
+
+.message.outgoing {
+    background: #dff4e5;
+    margin-left: auto;
+}
+
+.message-date {
+    font-size: 10px;
+    color: #667085;
+}
+
+/* RESPONSIVE */
+@media(max-width: 1000px) {
+    .stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media(max-width: 600px) {
+    .container {
+        padding: 12px;
+    }
+
+    .stats {
+        grid-template-columns: 1fr;
+    }
+
+    .info-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .header h1 {
+        font-size: 17px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header class="header">
+
+    <h1>VisionProtection — CRM</h1>
+
+    <span>Interface commerciale v2.5.3</span>
+
+</header>
+
+<main class="container">
+
+    <!-- STATISTIQUES -->
+
+    <section class="stats">
+
+        <div class="card">
+            <div class="card-title">
+                Total prospects
+            </div>
+
+            <div class="card-number" id="totalProspects">
+                —
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">
+                Nouveaux
+            </div>
+
+            <div class="card-number" id="nouveaux">
+                —
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">
+                Qualifiés
+            </div>
+
+            <div class="card-number" id="qualifies">
+                —
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">
+                Devis envoyés
+            </div>
+
+            <div class="card-number" id="devis">
+                —
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">
+                Clients
+            </div>
+
+            <div class="card-number" id="clients">
+                —
+            </div>
+        </div>
+
+    </section>
+
+
+    <!-- FILTRES -->
+
+    <section class="toolbar">
+
+        <input
+            id="search"
+            class="search"
+            type="text"
+            placeholder="Rechercher un nom, téléphone, entreprise, ville..."
+        >
+
+        <select id="statusFilter">
+
+            <option value="">
+                Tous les statuts
+            </option>
+
+            <option value="Nouveau">
+                Nouveau
+            </option>
+
+            <option value="Qualifié">
+                Qualifié
+            </option>
+
+            <option value="Visite/Étude">
+                Visite / Étude
+            </option>
+
+            <option value="Devis envoyé">
+                Devis envoyé
+            </option>
+
+            <option value="Négociation">
+                Négociation
+            </option>
+
+            <option value="Client">
+                Client
+            </option>
+
+        </select>
+
+        <button onclick="loadCRM()">
+            Actualiser
+        </button>
+
+    </section>
+
+
+    <!-- LISTE PROSPECTS -->
+
+    <section class="panel">
+
+        <h2>
+            Prospects
+        </h2>
+
+        <div class="table-container">
+
+            <table>
+
+                <thead>
+
+                    <tr>
+
+                        <th>
+                            Nom
+                        </th>
+
+                        <th>
+                            WhatsApp
+                        </th>
+
+                        <th>
+                            Entreprise
+                        </th>
+
+                        <th>
+                            Ville
+                        </th>
+
+                        <th>
+                            Service
+                        </th>
+
+                        <th>
+                            Statut
+                        </th>
+
+                        <th>
+                            Action
+                        </th>
+
+                    </tr>
+
+                </thead>
+
+                <tbody id="prospectsTable">
+
+                    <tr>
+
+                        <td colspan="7">
+                            Chargement...
+                        </td>
+
+                    </tr>
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    </section>
+
+</main>
+
+
+<!-- FICHE PROSPECT -->
+
+<div
+    class="modal"
+    id="prospectModal"
+>
+
+    <div class="modal-content">
+
+        <div class="modal-header">
+
+            <h2 id="prospectTitle">
+                Prospect
+            </h2>
+
+            <button
+                onclick="closeProspect()"
+            >
+                Fermer
+            </button>
+
+        </div>
+
+        <br>
+
+        <div id="prospectInfo"></div>
+
+        <hr>
+
+        <h3>
+            Historique WhatsApp
+        </h3>
+
+        <div id="messages">
+            Chargement...
+        </div>
+
+        <hr>
+
+        <h3>
+            Note commerciale
+        </h3>
+
+        <textarea
+            id="note"
+            rows="4"
+            style="width:100%;"
+            placeholder="Ajouter une note commerciale..."
+        ></textarea>
+
+        <br><br>
+
+        <button
+            onclick="saveNote()"
+        >
+            Enregistrer la note
+        </button>
+
+    </div>
+
+</div>
+
+
+<script>
+
+const API = window.location.origin;
+
+let prospects = [];
+
+let currentProspect = null;
+
+
+/* =====================================================
+   APPEL API
+===================================================== */
+
+async function apiRequest(url, options = {}) {
+
+    const response = await fetch(
+        API + url,
+        options
+    );
+
+    if (!response.ok) {
+
+        throw new Error(
+            await response.text()
+        );
+
+    }
+
+    return response.json();
+
+}
+
+
+/* =====================================================
+   CHARGEMENT CRM
+===================================================== */
+
+async function loadCRM() {
+
+    try {
+
+        const result =
+            await apiRequest(
+                "/crm/prospects"
+            );
+
+        prospects =
+            result.prospects ||
+            result ||
+            [];
+
+        renderProspects();
+
+        loadStats();
+
+    }
+
+    catch(error) {
+
+        document.getElementById(
+            "prospectsTable"
+        ).innerHTML =
+
+        `<tr>
+            <td colspan="7">
+                Erreur : ${escapeHTML(error.message)}
+            </td>
+        </tr>`;
+
+    }
+
+}
+
+
+/* =====================================================
+   STATISTIQUES
+===================================================== */
+
+async function loadStats() {
+
+    try {
+
+        const stats =
+            await apiRequest(
+                "/crm/stats"
+            );
+
+        document.getElementById(
+            "totalProspects"
+        ).textContent =
+            stats.total ?? 0;
+
+        document.getElementById(
+            "nouveaux"
+        ).textContent =
+            stats.nouveau ?? 0;
+
+        document.getElementById(
+            "qualifies"
+        ).textContent =
+            stats.qualifie ?? 0;
+
+        document.getElementById(
+            "devis"
+        ).textContent =
+            stats.devis_envoye ?? 0;
+
+        document.getElementById(
+            "clients"
+        ).textContent =
+            stats.client ?? 0;
+
+    }
+
+    catch(error) {
+
+        console.error(error);
+
+    }
+
+}
+
+
+/* =====================================================
+   AFFICHAGE PROSPECTS
+===================================================== */
+
+function renderProspects() {
+
+    const search =
+        document
+        .getElementById("search")
+        .value
+        .toLowerCase();
+
+    const status =
+        document
+        .getElementById("statusFilter")
+        .value;
+
+    const filtered =
+        prospects.filter(
+            prospect => {
+
+                const text = [
+
+                    prospect.nom,
+
+                    prospect.whatsapp_id,
+
+                    prospect.telephone,
+
+                    prospect.entreprise,
+
+                    prospect.ville,
+
+                    prospect.service,
+
+                    prospect.besoin
+
+                ]
+                .join(" ")
+                .toLowerCase();
+
+
+                const searchOK =
+                    !search ||
+                    text.includes(search);
+
+
+                const statusOK =
+                    !status ||
+                    prospect.statut === status;
+
+
+                return searchOK &&
+                       statusOK;
+
+            }
+        );
+
+
+    const table =
+        document.getElementById(
+            "prospectsTable"
+        );
+
+
+    if (!filtered.length) {
+
+        table.innerHTML =
+
+        `<tr>
+            <td colspan="7">
+                Aucun prospect trouvé.
+            </td>
+        </tr>`;
+
+        return;
+
+    }
+
+
+    table.innerHTML =
+        filtered.map(
+            prospect => {
+
+                const phone =
+                    prospect.telephone ||
+                    prospect.whatsapp_id ||
+                    "";
+
+                return `
+
+                <tr>
+
+                    <td>
+                        ${escapeHTML(
+                            prospect.nom || "—"
+                        )}
+                    </td>
+
+                    <td>
+                        ${escapeHTML(phone)}
+                    </td>
+
+                    <td>
+                        ${escapeHTML(
+                            prospect.entreprise || "—"
+                        )}
+                    </td>
+
+                    <td>
+                        ${escapeHTML(
+                            prospect.ville || "—"
+                        )}
+                    </td>
+
+                    <td>
+                        ${escapeHTML(
+                            prospect.service || "—"
+                        )}
+                    </td>
+
+                    <td>
+
+                        <span class="status">
+
+                            ${escapeHTML(
+                                prospect.statut ||
+                                "Nouveau"
+                            )}
+
+                        </span>
+
+                    </td>
+
+                    <td>
+
+                        <button
+                            onclick="openProspect(
+                                '${encodeURIComponent(phone)}'
+                            )"
+                        >
+                            Ouvrir
+                        </button>
+
+                    </td>
+
+                </tr>
+
+                `;
+
+            }
+        )
+        .join("");
+
+}
+
+
+/* =====================================================
+   OUVRIR PROSPECT
+===================================================== */
+
+async function openProspect(phone) {
+
+    try {
+
+        const data =
+            await apiRequest(
+                "/crm/prospect/" + phone
+            );
+
+
+        currentProspect =
+            data.prospect ||
+            data;
+
+
+        const p =
+            currentProspect;
+
+
+        document.getElementById(
+            "prospectTitle"
+        ).textContent =
+            p.nom ||
+            p.telephone ||
+            p.whatsapp_id ||
+            "Prospect";
+
+
+        document.getElementById(
+            "prospectInfo"
+        ).innerHTML = `
+
+        <div class="info-grid">
+
+            <div class="info-box">
+
+                <div class="info-label">
+                    Nom
+                </div>
+
+                <div class="info-value">
+                    ${escapeHTML(p.nom || "—")}
+                </div>
+
+            </div>
+
+
+            <div class="info-box">
+
+                <div class="info-label">
+                    WhatsApp
+                </div>
+
+                <div class="info-value">
+                    ${escapeHTML(
+                        p.telephone ||
+                        p.whatsapp_id ||
+                        "—"
+                    )}
+                </div>
+
+            </div>
+
+
+            <div class="info-box">
+
+                <div class="info-label">
+                    Entreprise
+                </div>
+
+                <div class="info-value">
+                    ${escapeHTML(
+                        p.entreprise || "—"
+                    )}
+                </div>
+
+            </div>
+
+
+            <div class="info-box">
+
+                <div class="info-label">
+                    Ville
+                </div>
+
+                <div class="info-value">
+                    ${escapeHTML(
+                        p.ville || "—"
+                    )}
+                </div>
+
+            </div>
+
+
+            <div class="info-box">
+
+                <div class="info-label">
+                    Service
+                </div>
+
+                <div class="info-value">
+                    ${escapeHTML(
+                        p.service || "—"
+                    )}
+                </div>
+
+            </div>
+
+
+            <div class="info-box">
+
+                <div class="info-label">
+                    Statut
+                </div>
+
+                <div class="info-value">
+                    ${escapeHTML(
+                        p.statut || "Nouveau"
+                    )}
+                </div>
+
+            </div>
+
+
+            <div
+                class="info-box"
+                style="grid-column:1/-1;"
+            >
+
+                <div class="info-label">
+                    Besoin
+                </div>
+
+                <div>
+                    ${escapeHTML(
+                        p.besoin || "—"
+                    )}
+                </div>
+
+            </div>
+
+        </div>
+
+        `;
+
+
+        await loadMessages(
+            p.telephone ||
+            p.whatsapp_id
+        );
+
+
+        document
+            .getElementById(
+                "prospectModal"
+            )
+            .classList
+            .add("show");
+
+    }
+
+    catch(error) {
+
+        alert(
+            "Erreur : " +
+            error.message
+        );
+
+    }
+
+}
+
+
+/* =====================================================
+   HISTORIQUE WHATSAPP
+===================================================== */
+
+async function loadMessages(phone) {
+
+    const container =
+        document.getElementById(
+            "messages"
+        );
+
+    container.innerHTML =
+        "Chargement...";
+
+
+    try {
+
+        const data =
+            await apiRequest(
+                "/crm/messages/" +
+                encodeURIComponent(phone)
+            );
+
+
+        const messages =
+            data.messages ||
+            data ||
+            [];
+
+
+        if (!messages.length) {
+
+            container.innerHTML =
+                "Aucun message enregistré.";
+
+            return;
+
+        }
+
+
+        container.innerHTML =
+            messages.map(
+                message => {
+
+                    const direction =
+                        message.direction ===
+                        "entrant"
+                            ? "incoming"
+                            : "outgoing";
+
+
+                    return `
+
+                    <div
+                        class="message ${direction}"
+                    >
+
+                        <div class="message-date">
+
+                            ${escapeHTML(
+                                message.created_at ||
+                                ""
+                            )}
+
+                        </div>
+
+                        ${escapeHTML(
+                            message.message ||
+                            ""
+                        )}
+
+                    </div>
+
+                    `;
+
+                }
+            )
+            .join("");
+
+    }
+
+    catch(error) {
+
+        container.innerHTML =
+            "Impossible de charger l'historique.";
+
+    }
+
+}
+
+
+/* =====================================================
+   NOTE COMMERCIALE
+===================================================== */
+
+async function saveNote() {
+
+    if (!currentProspect) {
+
+        return;
+
+    }
+
+
+    const note =
+        document
+        .getElementById("note")
+        .value
+        .trim();
+
+
+    if (!note) {
+
+        alert(
+            "Veuillez écrire une note."
+        );
+
+        return;
+
+    }
+
+
+    const phone =
+        currentProspect.telephone ||
+        currentProspect.whatsapp_id;
+
+
+    try {
+
+        await apiRequest(
+
+            "/crm/notes/" +
+            encodeURIComponent(phone),
+
+            {
+
+                method: "POST",
+
+                headers: {
+
+                    "Content-Type":
+                        "application/json"
+
+                },
+
+                body: JSON.stringify({
+
+                    note: note,
+
+                    auteur:
+                        "Commercial"
+
+                })
+
+            }
+
+        );
+
+
+        document.getElementById(
+            "note"
+        ).value = "";
+
+
+        alert(
+            "Note enregistrée."
+        );
+
+    }
+
+    catch(error) {
+
+        alert(
+            "Erreur : " +
+            error.message
+        );
+
+    }
+
+}
+
+
+/* =====================================================
+   FERMER FICHE
+===================================================== */
+
+function closeProspect() {
+
+    document
+        .getElementById(
+            "prospectModal"
+        )
+        .classList
+        .remove("show");
+
+}
+
+
+/* =====================================================
+   SECURITE AFFICHAGE HTML
+===================================================== */
+
+function escapeHTML(value) {
+
+    return String(value ?? "")
+        .replace(
+            /[&<>"']/g,
+
+            character => ({
+
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#039;"
+
+            }[character])
+
+        );
+
+}
+
+
+/* =====================================================
+   FILTRES
+===================================================== */
+
+document
+    .getElementById("search")
+    .addEventListener(
+        "input",
+        renderProspects
+    );
+
+
+document
+    .getElementById("statusFilter")
+    .addEventListener(
+        "change",
+        renderProspects
+    );
+
+
+/* =====================================================
+   DEMARRAGE
+===================================================== */
+
+loadCRM();
+
+</script>
+
+</body>
+</html>
