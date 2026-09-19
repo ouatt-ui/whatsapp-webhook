@@ -1,824 +1,128 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <title>Assistant Commercial - VisionProtection</title>
-
-  <style>
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      font-family: Arial, Helvetica, sans-serif;
-      background: #f4f7fb;
-      color: #1f2937;
-    }
-
-    header {
-      background: linear-gradient(135deg, #0b3d91, #1456b8);
-      color: white;
-      padding: 20px;
-    }
-
-    header h1 {
-      margin: 0;
-      font-size: 24px;
-    }
-
-    header p {
-      margin: 6px 0 0;
-      opacity: 0.9;
-    }
-
-    .container {
-      max-width: 1300px;
-      margin: auto;
-      padding: 20px;
-    }
-
-    .layout {
-      display: grid;
-      grid-template-columns: 1fr 360px;
-      gap: 20px;
-    }
-
-    .card {
-      background: white;
-      border-radius: 14px;
-      box-shadow: 0 4px 18px rgba(0,0,0,0.08);
-      padding: 20px;
-    }
-
-    .chat {
-      min-height: 650px;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .messages {
-      flex: 1;
-      overflow-y: auto;
-      padding: 10px 0;
-      max-height: 500px;
-    }
-
-    .message {
-      margin: 10px 0;
-      padding: 12px 15px;
-      border-radius: 12px;
-      max-width: 85%;
-      line-height: 1.5;
-    }
-
-    .assistant {
-      background: #eef4ff;
-      border-left: 4px solid #1456b8;
-    }
-
-    .user {
-      background: #e8f5e9;
-      margin-left: auto;
-    }
-
-    .input-area {
-      display: flex;
-      gap: 10px;
-      margin-top: 15px;
-    }
-
-    input {
-      flex: 1;
-      padding: 13px;
-      border: 1px solid #d1d5db;
-      border-radius: 10px;
-      font-size: 15px;
-    }
-
-    button {
-      border: none;
-      border-radius: 10px;
-      padding: 12px 16px;
-      cursor: pointer;
-      background: #1456b8;
-      color: white;
-      font-weight: bold;
-    }
-
-    button:hover {
-      opacity: 0.9;
-    }
-
-    .quick-buttons {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 15px;
-    }
-
-    .quick-buttons button {
-      background: #374151;
-      font-size: 13px;
-    }
-
-    .stats {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 12px;
-    }
-
-    .stat {
-      padding: 15px;
-      background: #f8fafc;
-      border-radius: 10px;
-      text-align: center;
-    }
-
-    .stat strong {
-      display: block;
-      font-size: 25px;
-      color: #1456b8;
-      margin-bottom: 5px;
-    }
-
-    .prospect {
-      border: 1px solid #e5e7eb;
-      border-radius: 10px;
-      padding: 12px;
-      margin: 10px 0;
-      background: #fafafa;
-    }
-
-    .prospect strong {
-      color: #0b3d91;
-    }
-
-    .status {
-      display: inline-block;
-      padding: 4px 8px;
-      border-radius: 20px;
-      background: #fff3cd;
-      font-size: 12px;
-      margin-top: 5px;
-    }
-
-    .notice {
-      margin-top: 15px;
-      padding: 12px;
-      border-radius: 10px;
-      background: #fff8e1;
-      font-size: 13px;
-      color: #6b4f00;
-    }
-
-    @media (max-width: 900px) {
-      .layout {
-        grid-template-columns: 1fr;
-      }
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VisionProtection — Assistant Commercial IA</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f4f7fb;color:#172033}
+header{background:#0b3d91;color:white;padding:18px 24px;display:flex;justify-content:space-between;align-items:center}
+.brand{font-size:22px;font-weight:bold}.badge{padding:7px 12px;border:1px solid #ffffff44;border-radius:20px;font-size:13px}
+.layout{display:grid;grid-template-columns:260px 1fr;min-height:calc(100vh - 68px)}
+aside{background:white;border-right:1px solid #e2e7ef;padding:20px}
+main{padding:24px;max-width:1200px;width:100%;margin:auto}
+button{border:0;border-radius:8px;padding:11px 15px;cursor:pointer;font-weight:bold}
+.primary{background:#0b3d91;color:white;width:100%}.secondary{background:#edf2f8;color:#172033;width:100%;margin-top:10px}
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:15px;margin-bottom:20px}
+.card,.panel{background:white;border:1px solid #e2e7ef;border-radius:12px;padding:18px}
+.panel{margin-bottom:18px}.label{font-size:13px;color:#667085}.value{font-size:28px;font-weight:bold;margin-top:8px}
+.chat{height:330px;overflow:auto;background:#f7f9fc;border-radius:10px;padding:15px}
+.msg{padding:11px 14px;border-radius:12px;margin:8px 0;max-width:80%;line-height:1.45;white-space:pre-line}
+.user{background:#dceaff;margin-left:auto}.assistant{background:white;border:1px solid #e1e6ee}
+.inputrow{display:flex;gap:10px;margin-top:12px}input{flex:1;padding:12px;border:1px solid #ccd4df;border-radius:8px;font-size:15px}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;border-bottom:1px solid #edf0f5;font-size:14px}th{color:#667085}
+.status{font-size:12px;padding:5px 8px;border-radius:12px;background:#eef3f8}
+@media(max-width:900px){.layout{grid-template-columns:1fr}aside{display:none}.cards{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:550px){.cards{grid-template-columns:1fr}main{padding:14px}}
+</style>
 </head>
-
 <body>
-
 <header>
-  <h1>🤖 Assistant Commercial VisionProtection</h1>
-  <p>Assistant V1 — analyse et recherche des prospects du CRM</p>
+<div class="brand">🛡️ VisionProtection</div>
+<div class="badge">Assistant Commercial IA — V1</div>
 </header>
 
-<div class="container">
+<div class="layout">
+<aside>
+<h3>Assistant commercial</h3>
+<p style="font-size:14px;color:#667085">Analyse des prospects et données du CRM sans modifier le parcours WhatsApp.</p>
+<button class="primary" onclick="loadData()">Actualiser les données</button>
+<button class="secondary" onclick="ask('Quels sont les prospects actuellement dans le CRM ?')">Voir les prospects</button>
+<button class="secondary" onclick="ask('Donne-moi les statistiques du CRM.')">Voir les statistiques</button>
+<button class="secondary" onclick="ask('Quels prospects dois-je examiner pour une relance ?')">Préparer les relances</button>
+</aside>
 
-  <div class="layout">
+<main>
+<section class="cards">
+<div class="card"><div class="label">Total prospects</div><div class="value" id="total">—</div></div>
+<div class="card"><div class="label">Conversations actives</div><div class="value" id="active">—</div></div>
+<div class="card"><div class="label">Conversations terminées</div><div class="value" id="done">—</div></div>
+<div class="card"><div class="label">Services demandés</div><div class="value" id="services">—</div></div>
+</section>
 
-    <!-- ASSISTANT -->
-    <div class="card chat">
+<section class="panel">
+<h2>💬 Assistant commercial</h2>
+<div id="chat" class="chat">
+<div class="msg assistant">Bonjour. Je suis l’assistant commercial de VisionProtection.<br>Je peux analyser les prospects, les services demandés et les statistiques de votre CRM.</div>
+</div>
+<div class="inputrow">
+<input id="question" placeholder="Ex. Combien avons-nous de prospects ?" onkeydown="if(event.key==='Enter')ask()">
+<button class="primary" style="width:auto" onclick="ask()">Envoyer</button>
+</div>
+</section>
 
-      <h2>Assistant commercial</h2>
-
-      <div id="messages" class="messages">
-
-        <div class="message assistant">
-          Bonjour 👋<br><br>
-          Je suis l'assistant commercial VisionProtection.
-          <br><br>
-          Je peux actuellement :
-          <ul>
-            <li>consulter les prospects</li>
-            <li>rechercher un prospect</li>
-            <li>analyser les statistiques</li>
-            <li>identifier les prospects à relancer</li>
-            <li>rechercher les prospects par service</li>
-          </ul>
-        </div>
-
-      </div>
-
-      <div class="quick-buttons">
-
-        <button onclick="showProspects()">
-          👥 Mes prospects
-        </button>
-
-        <button onclick="showStats()">
-          📊 Statistiques
-        </button>
-
-        <button onclick="showRelances()">
-          🔔 Relances
-        </button>
-
-        <button onclick="showService('CCTV')">
-          📹 CCTV
-        </button>
-
-        <button onclick="showService('alarme')">
-          🚨 Alarmes
-        </button>
-
-        <button onclick="showService('interphone')">
-          📞 Interphone
-        </button>
-
-      </div>
-
-      <div class="input-area">
-
-        <input
-          id="userInput"
-          type="text"
-          placeholder="Exemple : montre-moi les prospects CCTV"
-          onkeydown="handleEnter(event)"
-        >
-
-        <button onclick="sendMessage()">
-          Envoyer
-        </button>
-
-      </div>
-
-    </div>
-
-
-    <!-- PANNEAU CRM -->
-    <div>
-
-      <div class="card">
-
-        <h2>📊 CRM</h2>
-
-        <div class="stats">
-
-          <div class="stat">
-            <strong id="total">0</strong>
-            Total prospects
-          </div>
-
-          <div class="stat">
-            <strong id="nouveaux">0</strong>
-            Nouveaux
-          </div>
-
-          <div class="stat">
-            <strong id="actifs">0</strong>
-            Conversations
-          </div>
-
-          <div class="stat">
-            <strong id="termines">0</strong>
-            Terminés
-          </div>
-
-        </div>
-
-      </div>
-
-      <div class="card" style="margin-top:20px">
-
-        <h3>Services détectés</h3>
-
-        <div id="services">
-          Chargement...
-        </div>
-
-      </div>
-
-      <div class="card" style="margin-top:20px">
-
-        <h3>ℹ️ V1</h3>
-
-        <div class="notice">
-          Cette première version est volontairement en lecture seule.
-          <br><br>
-          Elle ne modifie pas les prospects et n'envoie pas encore
-          automatiquement de messages WhatsApp.
-        </div>
-
-      </div>
-
-    </div>
-
-  </div>
-
+<section class="panel">
+<h2>👥 Prospects récents</h2>
+<div id="prospects">Chargement...</div>
+</section>
+</main>
 </div>
 
-
 <script>
+let prospects=[],stats={};
 
-const API = window.location.origin;
-
-let prospects = [];
-let stats = {};
-
-
-/* =========================================================
-   MESSAGES
-========================================================= */
-
-function addMessage(text, type = "assistant") {
-
-  const container = document.getElementById("messages");
-
-  const div = document.createElement("div");
-
-  div.className = "message " + type;
-
-  div.innerHTML = text;
-
-  container.appendChild(div);
-
-  container.scrollTop = container.scrollHeight;
+async function api(url){
+ const r=await fetch(url);
+ if(!r.ok)throw new Error("HTTP "+r.status);
+ return r.json();
 }
 
-
-/* =========================================================
-   CHARGEMENT CRM
-========================================================= */
-
-async function loadCRM() {
-
-  try {
-
-    const prospectsResponse =
-      await fetch(API + "/crm/prospects");
-
-    const prospectsData =
-      await prospectsResponse.json();
-
-    if (prospectsData.success) {
-
-      prospects = prospectsData.prospects || [];
-
-    }
-
-    const statsResponse =
-      await fetch(API + "/crm/stats");
-
-    const statsData =
-      await statsResponse.json();
-
-    if (statsData.success) {
-
-      stats = statsData;
-
-    }
-
-    updateDashboard();
-
-  } catch (error) {
-
-    console.error(error);
-
-    addMessage(
-      "⚠️ Impossible de charger les données du CRM.",
-      "assistant"
-    );
-
-  }
-
+async function loadData(){
+ try{
+  const [p,s]=await Promise.all([api("/crm/prospects"),api("/crm/stats")]);
+  prospects=p.prospects||[];stats=s||{};
+  document.getElementById("total").textContent=stats.totalProspects??prospects.length;
+  document.getElementById("active").textContent=stats.activeConversations??0;
+  document.getElementById("done").textContent=stats.completedConversations??0;
+  document.getElementById("services").textContent=Object.keys(stats.byService||{}).length;
+  renderProspects();
+ }catch(e){
+  document.getElementById("prospects").innerHTML="<p style='color:#b42318'>Erreur CRM : "+escapeHtml(e.message)+"</p>";
+ }
 }
 
-
-/* =========================================================
-   DASHBOARD
-========================================================= */
-
-function updateDashboard() {
-
-  document.getElementById("total").textContent =
-    stats.totalProspects || prospects.length || 0;
-
-  document.getElementById("actifs").textContent =
-    stats.activeConversations || 0;
-
-  document.getElementById("termines").textContent =
-    stats.completedConversations || 0;
-
-  const nouveaux =
-    prospects.filter(p =>
-      String(p.statut || "").toLowerCase() === "nouveau"
-    ).length;
-
-  document.getElementById("nouveaux").textContent =
-    nouveaux;
-
-  const services =
-    stats.byService || {};
-
-  const container =
-    document.getElementById("services");
-
-  container.innerHTML = "";
-
-  Object.entries(services).forEach(([service, count]) => {
-
-    const div = document.createElement("div");
-
-    div.style.padding = "8px 0";
-
-    div.innerHTML =
-      "🔹 <strong>" +
-      escapeHtml(service) +
-      "</strong> : " +
-      count;
-
-    container.appendChild(div);
-
-  });
-
+function renderProspects(){
+ if(!prospects.length){document.getElementById("prospects").innerHTML="<p>Aucun prospect trouvé.</p>";return}
+ let h="<table><thead><tr><th>Nom</th><th>Téléphone</th><th>Service</th><th>Ville</th><th>Statut</th></tr></thead><tbody>";
+ prospects.slice(0,20).forEach(p=>{
+  h+="<tr><td>"+escapeHtml(p.nom||"—")+"</td><td>"+escapeHtml(p.telephone||p.whatsapp_id||"—")+"</td><td>"+escapeHtml(p.service||"Non défini")+"</td><td>"+escapeHtml(p.ville||"—")+"</td><td><span class='status'>"+escapeHtml(p.statut||"Nouveau")+"</span></td></tr>";
+ });
+ document.getElementById("prospects").innerHTML=h+"</tbody></table>";
 }
 
-
-/* =========================================================
-   PROSPECTS
-========================================================= */
-
-function showProspects() {
-
-  if (!prospects.length) {
-
-    addMessage(
-      "Aucun prospect n'est actuellement disponible.",
-      "assistant"
-    );
-
-    return;
-
-  }
-
-  let html =
-    "<strong>👥 Voici les prospects du CRM :</strong><br><br>";
-
-  prospects.forEach(p => {
-
-    html += prospectHtml(p);
-
-  });
-
-  addMessage(html);
-
+function addMessage(text,type){
+ const d=document.createElement("div");d.className="msg "+type;d.textContent=text;
+ document.getElementById("chat").appendChild(d);
+ document.getElementById("chat").scrollTop=document.getElementById("chat").scrollHeight;
 }
 
-
-/* =========================================================
-   RECHERCHE SERVICE
-========================================================= */
-
-function showService(service) {
-
-  const search =
-    service.toLowerCase();
-
-  const results =
-    prospects.filter(p => {
-
-      const value =
-        (
-          (p.service || "") +
-          " " +
-          (p.besoin || "")
-        ).toLowerCase();
-
-      return value.includes(search);
-
-    });
-
-  if (!results.length) {
-
-    addMessage(
-      "Aucun prospect trouvé pour le service <strong>" +
-      escapeHtml(service) +
-      "</strong>."
-    );
-
-    return;
-
-  }
-
-  let html =
-    "📹 <strong>Prospects " +
-    escapeHtml(service) +
-    "</strong><br><br>";
-
-  results.forEach(p => {
-
-    html += prospectHtml(p);
-
-  });
-
-  addMessage(html);
-
+function ask(question){
+ question=question||document.getElementById("question").value.trim();if(!question)return;
+ addMessage(question,"user");document.getElementById("question").value="";
+ const q=question.toLowerCase();let answer="";
+ if(q.includes("statistique")||q.includes("combien"))
+  answer="Données actuelles du CRM :\n• Total prospects : "+(stats.totalProspects??prospects.length)+"\n• Conversations actives : "+(stats.activeConversations??0)+"\n• Conversations terminées : "+(stats.completedConversations??0);
+ else if(q.includes("service")){
+  const e=Object.entries(stats.byService||{});
+  answer=e.length?"Services présents :\n"+e.map(x=>"• "+x[0]+" : "+x[1]).join("\n"):"Aucun service enregistré.";
+ }else if(q.includes("prospect")||q.includes("relance"))
+  answer=prospects.length?"Il y a actuellement "+prospects.length+" prospect(s) dans le CRM. Consultez la liste ci-dessous pour préparer les relances.":"Aucun prospect disponible.";
+ else answer="Je peux consulter les prospects, les statistiques et les services enregistrés. La prochaine version pourra intégrer l’analyse commerciale IA et la génération de messages de relance.";
+ setTimeout(()=>addMessage(answer,"assistant"),250);
 }
 
-
-/* =========================================================
-   RELANCES
-========================================================= */
-
-function showRelances() {
-
-  const results =
-    prospects.filter(p => {
-
-      const statut =
-        String(p.statut || "").toLowerCase();
-
-      return statut === "nouveau";
-
-    });
-
-  if (!results.length) {
-
-    addMessage(
-      "🔔 Aucun prospect actuellement identifié comme nouveau."
-    );
-
-    return;
-
-  }
-
-  let html =
-    "🔔 <strong>Prospects potentiellement à relancer :</strong><br><br>";
-
-  results.forEach(p => {
-
-    html += prospectHtml(p);
-
-  });
-
-  html +=
-    "<br><small>La V1 identifie les prospects mais n'envoie encore aucun message automatiquement.</small>";
-
-  addMessage(html);
-
-}
-
-
-/* =========================================================
-   STATISTIQUES
-========================================================= */
-
-function showStats() {
-
-  const services =
-    stats.byService || {};
-
-  let html =
-    "<strong>📊 Statistiques CRM</strong><br><br>";
-
-  html +=
-    "Total prospects : <strong>" +
-    (stats.totalProspects || 0) +
-    "</strong><br>";
-
-  html +=
-    "Conversations actives : <strong>" +
-    (stats.activeConversations || 0) +
-    "</strong><br>";
-
-  html +=
-    "Conversations terminées : <strong>" +
-    (stats.completedConversations || 0) +
-    "</strong><br><br>";
-
-  html +=
-    "<strong>Services :</strong><br>";
-
-  Object.entries(services).forEach(
-    ([service, count]) => {
-
-      html +=
-        "• " +
-        escapeHtml(service) +
-        " : " +
-        count +
-        "<br>";
-
-    }
-  );
-
-  addMessage(html);
-
-}
-
-
-/* =========================================================
-   FICHE PROSPECT
-========================================================= */
-
-function prospectHtml(p) {
-
-  return `
-    <div class="prospect">
-
-      <strong>
-        ${escapeHtml(p.nom || "Prospect")}
-      </strong>
-
-      <br>
-
-      📱 ${escapeHtml(p.telephone || p.whatsapp_id || "-")}
-
-      <br>
-
-      🏢 ${escapeHtml(p.entreprise || "Entreprise non renseignée")}
-
-      <br>
-
-      📍 ${escapeHtml(p.ville || "Ville non renseignée")}
-
-      <br>
-
-      🔧 Service :
-      ${escapeHtml(p.service || "Non défini")}
-
-      <br>
-
-      💬 Besoin :
-      ${escapeHtml(p.besoin || "Non renseigné")}
-
-      <br>
-
-      <span class="status">
-        ${escapeHtml(p.statut || "Nouveau")}
-      </span>
-
-    </div>
-  `;
-
-}
-
-
-/* =========================================================
-   ASSISTANT TEXTE
-========================================================= */
-
-function sendMessage() {
-
-  const input =
-    document.getElementById("userInput");
-
-  const text =
-    input.value.trim();
-
-  if (!text) return;
-
-  addMessage(
-    escapeHtml(text),
-    "user"
-  );
-
-  input.value = "";
-
-  processCommand(text);
-
-}
-
-
-function processCommand(text) {
-
-  const normalized =
-    text
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "");
-
-  if (
-    normalized.includes("statistique") ||
-    normalized.includes("stats")
-  ) {
-
-    showStats();
-    return;
-
-  }
-
-  if (
-    normalized.includes("relance") ||
-    normalized.includes("relancer")
-  ) {
-
-    showRelances();
-    return;
-
-  }
-
-  if (
-    normalized.includes("cctv") ||
-    normalized.includes("camera") ||
-    normalized.includes("videosurveillance")
-  ) {
-
-    showService("CCTV");
-    return;
-
-  }
-
-  if (
-    normalized.includes("alarme")
-  ) {
-
-    showService("alarme");
-    return;
-
-  }
-
-  if (
-    normalized.includes("interphone") ||
-    normalized.includes("visiophone")
-  ) {
-
-    showService("interphone");
-    return;
-
-  }
-
-  if (
-    normalized.includes("prospect") ||
-    normalized.includes("client")
-  ) {
-
-    showProspects();
-    return;
-
-  }
-
-  addMessage(
-    "🤖 Je peux actuellement vous aider avec :<br><br>" +
-
-    "• les prospects<br>" +
-    "• les statistiques<br>" +
-    "• les relances<br>" +
-    "• les prospects CCTV<br>" +
-    "• les alarmes<br>" +
-    "• les interphones<br><br>" +
-
-    "Exemple : <em>montre-moi les prospects CCTV</em>"
-  );
-
-}
-
-
-/* =========================================================
-   ENTER
-========================================================= */
-
-function handleEnter(event) {
-
-  if (event.key === "Enter") {
-
-    sendMessage();
-
-  }
-
-}
-
-
-/* =========================================================
-   SECURITE AFFICHAGE
-========================================================= */
-
-function escapeHtml(value) {
-
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-
-}
-
-
-/* =========================================================
-   DEMARRAGE
-========================================================= */
-
-loadCRM();
-
+function escapeHtml(s){return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;")}
+loadData();
 </script>
-
 </body>
 </html>
