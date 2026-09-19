@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Assistant Commercial - VisionProtection</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #f4f7fb;
+      color: #1f2937;
+    }
+
+    header {
+      background: linear-gradient(135deg, #0b3d91, #1456b8);
+      color: white;
+      padding: 20px;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 24px;
+    }
+
+    header p {
+      margin: 6px 0 0;
+      opacity: 0.9;
+    }
+
+    .container {
+      max-width: 1300px;
+      margin: auto;
+      padding: 20px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      gap: 20px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 14px;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.08);
+      padding: 20px;
+    }
+
+    .chat {
+      min-height: 650px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 0;
+      max-height: 500px;
+    }
+
+    .message {
+      margin: 10px 0;
+      padding: 12px 15px;
+      border-radius: 12px;
+      max-width: 85%;
+      line-height: 1.5;
+    }
+
+    .assistant {
+      background: #eef4ff;
+      border-left: 4px solid #1456b8;
+    }
+
+    .user {
+      background: #e8f5e9;
+      margin-left: auto;
+    }
+
+    .input-area {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+    }
+
+    input {
+      flex: 1;
+      padding: 13px;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      font-size: 15px;
+    }
+
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 12px 16px;
+      cursor: pointer;
+      background: #1456b8;
+      color: white;
+      font-weight: bold;
+    }
+
+    button:hover {
+      opacity: 0.9;
+    }
+
+    .quick-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 15px;
+    }
+
+    .quick-buttons button {
+      background: #374151;
+      font-size: 13px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .stat {
+      padding: 15px;
+      background: #f8fafc;
+      border-radius: 10px;
+      text-align: center;
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 25px;
+      color: #1456b8;
+      margin-bottom: 5px;
+    }
+
+    .prospect {
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 12px;
+      margin: 10px 0;
+      background: #fafafa;
+    }
+
+    .prospect strong {
+      color: #0b3d91;
+    }
+
+    .status {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 20px;
+      background: #fff3cd;
+      font-size: 12px;
+      margin-top: 5px;
+    }
+
+    .notice {
+      margin-top: 15px;
+      padding: 12px;
+      border-radius: 10px;
+      background: #fff8e1;
+      font-size: 13px;
+      color: #6b4f00;
+    }
+
+    @media (max-width: 900px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+<header>
+  <h1>🤖 Assistant Commercial VisionProtection</h1>
+  <p>Assistant V1 — analyse et recherche des prospects du CRM</p>
+</header>
+
+<div class="container">
+
+  <div class="layout">
+
+    <!-- ASSISTANT -->
+    <div class="card chat">
+
+      <h2>Assistant commercial</h2>
+
+      <div id="messages" class="messages">
+
+        <div class="message assistant">
+          Bonjour 👋<br><br>
+          Je suis l'assistant commercial VisionProtection.
+          <br><br>
+          Je peux actuellement :
+          <ul>
+            <li>consulter les prospects</li>
+            <li>rechercher un prospect</li>
+            <li>analyser les statistiques</li>
+            <li>identifier les prospects à relancer</li>
+            <li>rechercher les prospects par service</li>
+          </ul>
+        </div>
+
+      </div>
+
+      <div class="quick-buttons">
+
+        <button onclick="showProspects()">
+          👥 Mes prospects
+        </button>
+
+        <button onclick="showStats()">
+          📊 Statistiques
+        </button>
+
+        <button onclick="showRelances()">
+          🔔 Relances
+        </button>
+
+        <button onclick="showService('CCTV')">
+          📹 CCTV
+        </button>
+
+        <button onclick="showService('alarme')">
+          🚨 Alarmes
+        </button>
+
+        <button onclick="showService('interphone')">
+          📞 Interphone
+        </button>
+
+      </div>
+
+      <div class="input-area">
+
+        <input
+          id="userInput"
+          type="text"
+          placeholder="Exemple : montre-moi les prospects CCTV"
+          onkeydown="handleEnter(event)"
+        >
+
+        <button onclick="sendMessage()">
+          Envoyer
+        </button>
+
+      </div>
+
+    </div>
+
+
+    <!-- PANNEAU CRM -->
+    <div>
+
+      <div class="card">
+
+        <h2>📊 CRM</h2>
+
+        <div class="stats">
+
+          <div class="stat">
+            <strong id="total">0</strong>
+            Total prospects
+          </div>
+
+          <div class="stat">
+            <strong id="nouveaux">0</strong>
+            Nouveaux
+          </div>
+
+          <div class="stat">
+            <strong id="actifs">0</strong>
+            Conversations
+          </div>
+
+          <div class="stat">
+            <strong id="termines">0</strong>
+            Terminés
+          </div>
+
+        </div>
+
+      </div>
+
+      <div class="card" style="margin-top:20px">
+
+        <h3>Services détectés</h3>
+
+        <div id="services">
+          Chargement...
+        </div>
+
+      </div>
+
+      <div class="card" style="margin-top:20px">
+
+        <h3>ℹ️ V1</h3>
+
+        <div class="notice">
+          Cette première version est volontairement en lecture seule.
+          <br><br>
+          Elle ne modifie pas les prospects et n'envoie pas encore
+          automatiquement de messages WhatsApp.
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
+
+<script>
+
+const API = window.location.origin;
+
+let prospects = [];
+let stats = {};
+
+
+/* =========================================================
+   MESSAGES
+========================================================= */
+
+function addMessage(text, type = "assistant") {
+
+  const container = document.getElementById("messages");
+
+  const div = document.createElement("div");
+
+  div.className = "message " + type;
+
+  div.innerHTML = text;
+
+  container.appendChild(div);
+
+  container.scrollTop = container.scrollHeight;
+}
+
+
+/* =========================================================
+   CHARGEMENT CRM
+========================================================= */
+
+async function loadCRM() {
+
+  try {
+
+    const prospectsResponse =
+      await fetch(API + "/crm/prospects");
+
+    const prospectsData =
+      await prospectsResponse.json();
+
+    if (prospectsData.success) {
+
+      prospects = prospectsData.prospects || [];
+
+    }
+
+    const statsResponse =
+      await fetch(API + "/crm/stats");
+
+    const statsData =
+      await statsResponse.json();
+
+    if (statsData.success) {
+
+      stats = statsData;
+
+    }
+
+    updateDashboard();
+
+  } catch (error) {
+
+    console.error(error);
+
+    addMessage(
+      "⚠️ Impossible de charger les données du CRM.",
+      "assistant"
+    );
+
+  }
+
+}
+
+
+/* =========================================================
+   DASHBOARD
+========================================================= */
+
+function updateDashboard() {
+
+  document.getElementById("total").textContent =
+    stats.totalProspects || prospects.length || 0;
+
+  document.getElementById("actifs").textContent =
+    stats.activeConversations || 0;
+
+  document.getElementById("termines").textContent =
+    stats.completedConversations || 0;
+
+  const nouveaux =
+    prospects.filter(p =>
+      String(p.statut || "").toLowerCase() === "nouveau"
+    ).length;
+
+  document.getElementById("nouveaux").textContent =
+    nouveaux;
+
+  const services =
+    stats.byService || {};
+
+  const container =
+    document.getElementById("services");
+
+  container.innerHTML = "";
+
+  Object.entries(services).forEach(([service, count]) => {
+
+    const div = document.createElement("div");
+
+    div.style.padding = "8px 0";
+
+    div.innerHTML =
+      "🔹 <strong>" +
+      escapeHtml(service) +
+      "</strong> : " +
+      count;
+
+    container.appendChild(div);
+
+  });
+
+}
+
+
+/* =========================================================
+   PROSPECTS
+========================================================= */
+
+function showProspects() {
+
+  if (!prospects.length) {
+
+    addMessage(
+      "Aucun prospect n'est actuellement disponible.",
+      "assistant"
+    );
+
+    return;
+
+  }
+
+  let html =
+    "<strong>👥 Voici les prospects du CRM :</strong><br><br>";
+
+  prospects.forEach(p => {
+
+    html += prospectHtml(p);
+
+  });
+
+  addMessage(html);
+
+}
+
+
+/* =========================================================
+   RECHERCHE SERVICE
+========================================================= */
+
+function showService(service) {
+
+  const search =
+    service.toLowerCase();
+
+  const results =
+    prospects.filter(p => {
+
+      const value =
+        (
+          (p.service || "") +
+          " " +
+          (p.besoin || "")
+        ).toLowerCase();
+
+      return value.includes(search);
+
+    });
+
+  if (!results.length) {
+
+    addMessage(
+      "Aucun prospect trouvé pour le service <strong>" +
+      escapeHtml(service) +
+      "</strong>."
+    );
+
+    return;
+
+  }
+
+  let html =
+    "📹 <strong>Prospects " +
+    escapeHtml(service) +
+    "</strong><br><br>";
+
+  results.forEach(p => {
+
+    html += prospectHtml(p);
+
+  });
+
+  addMessage(html);
+
+}
+
+
+/* =========================================================
+   RELANCES
+========================================================= */
+
+function showRelances() {
+
+  const results =
+    prospects.filter(p => {
+
+      const statut =
+        String(p.statut || "").toLowerCase();
+
+      return statut === "nouveau";
+
+    });
+
+  if (!results.length) {
+
+    addMessage(
+      "🔔 Aucun prospect actuellement identifié comme nouveau."
+    );
+
+    return;
+
+  }
+
+  let html =
+    "🔔 <strong>Prospects potentiellement à relancer :</strong><br><br>";
+
+  results.forEach(p => {
+
+    html += prospectHtml(p);
+
+  });
+
+  html +=
+    "<br><small>La V1 identifie les prospects mais n'envoie encore aucun message automatiquement.</small>";
+
+  addMessage(html);
+
+}
+
+
+/* =========================================================
+   STATISTIQUES
+========================================================= */
+
+function showStats() {
+
+  const services =
+    stats.byService || {};
+
+  let html =
+    "<strong>📊 Statistiques CRM</strong><br><br>";
+
+  html +=
+    "Total prospects : <strong>" +
+    (stats.totalProspects || 0) +
+    "</strong><br>";
+
+  html +=
+    "Conversations actives : <strong>" +
+    (stats.activeConversations || 0) +
+    "</strong><br>";
+
+  html +=
+    "Conversations terminées : <strong>" +
+    (stats.completedConversations || 0) +
+    "</strong><br><br>";
+
+  html +=
+    "<strong>Services :</strong><br>";
+
+  Object.entries(services).forEach(
+    ([service, count]) => {
+
+      html +=
+        "• " +
+        escapeHtml(service) +
+        " : " +
+        count +
+        "<br>";
+
+    }
+  );
+
+  addMessage(html);
+
+}
+
+
+/* =========================================================
+   FICHE PROSPECT
+========================================================= */
+
+function prospectHtml(p) {
+
+  return `
+    <div class="prospect">
+
+      <strong>
+        ${escapeHtml(p.nom || "Prospect")}
+      </strong>
+
+      <br>
+
+      📱 ${escapeHtml(p.telephone || p.whatsapp_id || "-")}
+
+      <br>
+
+      🏢 ${escapeHtml(p.entreprise || "Entreprise non renseignée")}
+
+      <br>
+
+      📍 ${escapeHtml(p.ville || "Ville non renseignée")}
+
+      <br>
+
+      🔧 Service :
+      ${escapeHtml(p.service || "Non défini")}
+
+      <br>
+
+      💬 Besoin :
+      ${escapeHtml(p.besoin || "Non renseigné")}
+
+      <br>
+
+      <span class="status">
+        ${escapeHtml(p.statut || "Nouveau")}
+      </span>
+
+    </div>
+  `;
+
+}
+
+
+/* =========================================================
+   ASSISTANT TEXTE
+========================================================= */
+
+function sendMessage() {
+
+  const input =
+    document.getElementById("userInput");
+
+  const text =
+    input.value.trim();
+
+  if (!text) return;
+
+  addMessage(
+    escapeHtml(text),
+    "user"
+  );
+
+  input.value = "";
+
+  processCommand(text);
+
+}
+
+
+function processCommand(text) {
+
+  const normalized =
+    text
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+  if (
+    normalized.includes("statistique") ||
+    normalized.includes("stats")
+  ) {
+
+    showStats();
+    return;
+
+  }
+
+  if (
+    normalized.includes("relance") ||
+    normalized.includes("relancer")
+  ) {
+
+    showRelances();
+    return;
+
+  }
+
+  if (
+    normalized.includes("cctv") ||
+    normalized.includes("camera") ||
+    normalized.includes("videosurveillance")
+  ) {
+
+    showService("CCTV");
+    return;
+
+  }
+
+  if (
+    normalized.includes("alarme")
+  ) {
+
+    showService("alarme");
+    return;
+
+  }
+
+  if (
+    normalized.includes("interphone") ||
+    normalized.includes("visiophone")
+  ) {
+
+    showService("interphone");
+    return;
+
+  }
+
+  if (
+    normalized.includes("prospect") ||
+    normalized.includes("client")
+  ) {
+
+    showProspects();
+    return;
+
+  }
+
+  addMessage(
+    "🤖 Je peux actuellement vous aider avec :<br><br>" +
+
+    "• les prospects<br>" +
+    "• les statistiques<br>" +
+    "• les relances<br>" +
+    "• les prospects CCTV<br>" +
+    "• les alarmes<br>" +
+    "• les interphones<br><br>" +
+
+    "Exemple : <em>montre-moi les prospects CCTV</em>"
+  );
+
+}
+
+
+/* =========================================================
+   ENTER
+========================================================= */
+
+function handleEnter(event) {
+
+  if (event.key === "Enter") {
+
+    sendMessage();
+
+  }
+
+}
+
+
+/* =========================================================
+   SECURITE AFFICHAGE
+========================================================= */
+
+function escapeHtml(value) {
+
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
+}
+
+
+/* =========================================================
+   DEMARRAGE
+========================================================= */
+
+loadCRM();
+
+</script>
+
+</body>
+</html>
