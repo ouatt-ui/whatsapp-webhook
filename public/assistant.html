@@ -4,7 +4,107 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>VisionProtection — Assistant Commercial IA</title>
-<style>
+<style>.modal{
+  display:none;
+  position:fixed;
+  inset:0;
+  background:rgba(15,23,42,.55);
+  z-index:1000;
+  padding:25px;
+  overflow:auto;
+}
+
+.modal.show{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+.modal-box{
+  background:white;
+  width:100%;
+  max-width:850px;
+  border-radius:16px;
+  box-shadow:0 20px 60px rgba(0,0,0,.25);
+  overflow:hidden;
+}
+
+.modal-header{
+  background:#0b3d91;
+  color:white;
+  padding:20px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+
+.modal-header h2{
+  margin:0;
+}
+
+.close-btn{
+  background:rgba(255,255,255,.15);
+  color:white;
+  font-size:22px;
+  padding:5px 12px;
+}
+
+.prospect-grid{
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  gap:14px;
+  padding:20px;
+}
+
+.info-box{
+  background:#f7f9fc;
+  border:1px solid #e4e8ef;
+  border-radius:10px;
+  padding:14px;
+}
+
+.info-label{
+  color:#667085;
+  font-size:12px;
+  margin-bottom:5px;
+}
+
+.info-value{
+  font-weight:bold;
+  font-size:15px;
+}
+
+.modal-actions{
+  display:flex;
+  gap:10px;
+  padding:0 20px 20px;
+  flex-wrap:wrap;
+}
+
+.action-whatsapp{
+  background:#198754;
+  color:white;
+}
+
+.action-call{
+  background:#0b3d91;
+  color:white;
+}
+
+.action-close{
+  background:#edf2f8;
+  color:#172033;
+}
+
+@media(max-width:600px){
+  .prospect-grid{
+    grid-template-columns:1fr;
+  }
+
+  .modal{
+    padding:10px;
+  }
+}
 *{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f4f7fb;color:#172033}
 header{background:#0b3d91;color:white;padding:18px 24px;display:flex;justify-content:space-between;align-items:center}
 .brand{font-size:22px;font-weight:bold}.badge{padding:7px 12px;border:1px solid #ffffff44;border-radius:20px;font-size:13px}
@@ -102,7 +202,99 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 </main>
 </div>
 
-<script>
+<div id="prospectModal" class="modal">
+
+  <div class="modal-box">
+
+    <div class="modal-header">
+      <div>
+        <div style="font-size:12px;opacity:.8">
+          FICHE COMMERCIALE
+        </div>
+        <h2 id="modalNom">Prospect</h2>
+      </div>
+
+      <button
+        class="close-btn"
+        onclick="fermerProspect()">
+        ×
+      </button>
+    </div>
+
+    <div class="prospect-grid">
+
+      <div class="info-box">
+        <div class="info-label">Téléphone</div>
+        <div class="info-value" id="modalTelephone">—</div>
+      </div>
+
+      <div class="info-box">
+        <div class="info-label">WhatsApp ID</div>
+        <div class="info-value" id="modalWhatsapp">—</div>
+      </div>
+
+      <div class="info-box">
+        <div class="info-label">Entreprise</div>
+        <div class="info-value" id="modalEntreprise">—</div>
+      </div>
+
+      <div class="info-box">
+        <div class="info-label">Ville</div>
+        <div class="info-value" id="modalVille">—</div>
+      </div>
+
+      <div class="info-box">
+        <div class="info-label">Service demandé</div>
+        <div class="info-value" id="modalService">—</div>
+      </div>
+
+      <div class="info-box">
+        <div class="info-label">Statut</div>
+        <div class="info-value" id="modalStatut">—</div>
+      </div>
+
+      <div class="info-box" style="grid-column:1/-1">
+        <div class="info-label">Besoin / Projet</div>
+        <div class="info-value" id="modalBesoin">—</div>
+      </div>
+
+      <div class="info-box">
+        <div class="info-label">Création</div>
+        <div class="info-value" id="modalCreated">—</div>
+      </div>
+
+      <div class="info-box">
+        <div class="info-label">Dernière activité</div>
+        <div class="info-value" id="modalUpdated">—</div>
+      </div>
+
+    </div>
+
+    <div class="modal-actions">
+
+      <button
+        class="action-whatsapp"
+        onclick="ouvrirWhatsApp()">
+        💬 WhatsApp
+      </button>
+
+      <button
+        class="action-call"
+        onclick="appelerProspect()">
+        📞 Appeler
+      </button>
+
+      <button
+        class="action-close"
+        onclick="fermerProspect()">
+        Fermer
+      </button>
+
+    </div>
+
+  </div>
+
+</div><script>
 let prospects=[],stats={};
 
 async function api(url){
@@ -277,14 +469,121 @@ function afficherProspects(liste) {
 
 function renderProspects() {
   afficherProspects(prospects);
-}function ouvrirProspect(id) {
+let prospectSelectionne = null;
 
-  const prospect = prospects.find(p => String(p.id) === String(id));
+
+function ouvrirProspect(id) {
+
+  const prospect = prospects.find(
+    p => String(p.id) === String(id)
+  );
 
   if (!prospect) {
     alert("Prospect introuvable.");
     return;
   }
+
+  prospectSelectionne = prospect;
+
+  document.getElementById("modalNom").textContent =
+    prospect.nom || "Prospect";
+
+  document.getElementById("modalTelephone").textContent =
+    prospect.telephone || "—";
+
+  document.getElementById("modalWhatsapp").textContent =
+    prospect.whatsapp_id || "—";
+
+  document.getElementById("modalEntreprise").textContent =
+    prospect.entreprise || "—";
+
+  document.getElementById("modalVille").textContent =
+    prospect.ville || "—";
+
+  document.getElementById("modalService").textContent =
+    prospect.service || "Non défini";
+
+  document.getElementById("modalStatut").textContent =
+    prospect.statut || "Nouveau";
+
+  document.getElementById("modalBesoin").textContent =
+    prospect.besoin || "—";
+
+  document.getElementById("modalCreated").textContent =
+    formaterDate(prospect.created_at);
+
+  document.getElementById("modalUpdated").textContent =
+    formaterDate(prospect.updated_at);
+
+  document
+    .getElementById("prospectModal")
+    .classList.add("show");
+}
+
+
+function fermerProspect() {
+
+  document
+    .getElementById("prospectModal")
+    .classList.remove("show");
+
+  prospectSelectionne = null;
+}
+
+
+function formaterDate(date) {
+
+  if (!date) return "—";
+
+  try {
+
+    return new Date(date).toLocaleString("fr-FR");
+
+  } catch (e) {
+
+    return date;
+  }
+}
+
+
+function ouvrirWhatsApp() {
+
+  if (!prospectSelectionne) return;
+
+  const numero =
+    prospectSelectionne.telephone ||
+    prospectSelectionne.whatsapp_id;
+
+  if (!numero) {
+    alert("Aucun numéro WhatsApp disponible.");
+    return;
+  }
+
+  const propre = String(numero).replace(/\D/g, "");
+
+  window.open(
+    "https://wa.me/" + propre,
+    "_blank"
+  );
+}
+
+
+function appelerProspect() {
+
+  if (!prospectSelectionne) return;
+
+  const numero =
+    prospectSelectionne.telephone ||
+    prospectSelectionne.whatsapp_id;
+
+  if (!numero) {
+    alert("Aucun numéro disponible.");
+    return;
+  }
+
+  window.location.href =
+    "tel:+" + String(numero).replace(/\D/g, "");
+}
 
   alert(
     "PROSPECT\n\n" +
