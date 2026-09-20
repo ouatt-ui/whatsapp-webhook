@@ -62,8 +62,42 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 </section>
 
 <section class="panel">
-<h2>👥 Prospects récents</h2>
-<div id="prospects">Chargement...</div>
+  <h2>🔎 Recherche des prospects</h2>
+
+  <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin-bottom:15px;">
+
+    <input
+      id="searchProspect"
+      type="text"
+      placeholder="Nom, téléphone, entreprise, ville..."
+      oninput="filterProspects()"
+      style="padding:11px;border:1px solid #ccd4df;border-radius:8px;"
+    >
+
+    <select
+      id="serviceFilter"
+      onchange="filterProspects()"
+      style="padding:11px;border:1px solid #ccd4df;border-radius:8px;"
+    >
+      <option value="">Tous les services</option>
+    </select>
+
+    <select
+      id="statusFilter"
+      onchange="filterProspects()"
+      style="padding:11px;border:1px solid #ccd4df;border-radius:8px;"
+    >
+      <option value="">Tous les statuts</option>
+      <option value="Nouveau">Nouveau</option>
+      <option value="En cours">En cours</option>
+      <option value="Terminé">Terminé</option>
+    </select>
+
+  </div>
+
+  <div id="prospects">
+    Chargement...
+  </div>
 </section>
 </main>
 </div>
