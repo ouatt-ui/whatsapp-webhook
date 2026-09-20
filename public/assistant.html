@@ -111,29 +111,157 @@ async function api(url){
  return r.json();
 }
 
-async function loadData(){
- try{
-  const [p,s]=await Promise.all([api("/crm/prospects"),api("/crm/stats")]);
-  prospects=p.prospects||[];stats=s||{};
-  document.getElementById("total").textContent=stats.totalProspects??prospects.length;
-  document.getElementById("active").textContent=stats.activeConversations??0;
-  document.getElementById("done").textContent=stats.completedConversations??0;
-  document.getElementById("services").textContent=Object.keys(stats.byService||{}).length;
-  renderProspects();
- }catch(e){
-  document.getElementById("prospects").innerHTML="<p style='color:#b42318'>Erreur CRM : "+escapeHtml(e.message)+"</p>";
- }
+async function loadData() {
+  try {
+    const [p, s] = await Promise.all([
+      api("/crm/prospects"),
+      api("/crm/stats")
+    ]);
+
+    prospects = p.prospects || [];
+    stats = s || {};
+
+    document.getElementById("total").textContent =
+      stats.totalProspects ?? prospects.length;
+
+    document.getElementById("active").textContent =
+      stats.activeConversations ?? 0;
+
+    document.getElementById("done").textContent =
+      stats.completedConversations ?? 0;
+
+    document.getElementById("services").textContent =
+      Object.keys(stats.byService || {}).length;
+
+    renderProspects();
+
+    // Remplir la liste des services
+    const serviceSelect = document.getElementById("serviceFilter");
+
+    if (serviceSelect) {
+      const services = [
+        ...new Set(
+          prospects
+            .map(p => p.service)
+            .filter(Boolean)
+        )
+      ].sort();
+
+      serviceSelect.innerHTML =
+        '<option value="">Tous les services</option>';
+
+      services.forEach(service => {
+        serviceSelect.innerHTML +=
+          '<option value="' +
+          escapeHtml(service) +
+          '">' +
+          escapeHtml(service) +
+          "</option>";
+      });
+    }
+
+  } catch (e) {
+    document.getElementById("prospects").innerHTML =
+      "<p style='color:#b42318'>Erreur CRM : " +
+      escapeHtml(e.message) +
+      "</p>";
+  }
 }
 
-function renderProspects(){
- if(!prospects.length){document.getElementById("prospects").innerHTML="<p>Aucun prospect trouvé.</p>";return}
- let h="<table><thead><tr><th>Nom</th><th>Téléphone</th><th>Service</th><th>Ville</th><th>Statut</th></tr></thead><tbody>";
- prospects.slice(0,20).forEach(p=>{
-  h+="<tr><td>"+escapeHtml(p.nom||"—")+"</td><td>"+escapeHtml(p.telephone||p.whatsapp_id||"—")+"</td><td>"+escapeHtml(p.service||"Non défini")+"</td><td>"+escapeHtml(p.ville||"—")+"</td><td><span class='status'>"+escapeHtml(p.statut||"Nouveau")+"</span></td></tr>";
- });
- document.getElementById("prospects").innerHTML=h+"</tbody></table>";
+
+function filterProspects() {
+
+  const search = document
+    .getElementById("searchProspect")
+    .value
+    .toLowerCase()
+    .trim();
+
+  const service = document
+    .getElementById("serviceFilter")
+    .value;
+
+  const status = document
+    .getElementById("statusFilter")
+    .value;
+
+  const filtered = prospects.filter(p => {
+
+    const texte = [
+      p.nom,
+      p.telephone,
+      p.whatsapp_id,
+      p.entreprise,
+      p.ville,
+      p.service,
+      p.besoin,
+      p.statut
+    ]
+    .join(" ")
+    .toLowerCase();
+
+    const rechercheOK =
+      !search || texte.includes(search);
+
+    const serviceOK =
+      !service || (p.service || "") === service;
+
+    const statutOK =
+      !status || (p.statut || "") === status;
+
+    return rechercheOK && serviceOK && statutOK;
+  });
+
+  afficherProspects(filtered);
 }
 
+
+function afficherProspects(liste) {
+
+  const container = document.getElementById("prospects");
+
+  if (!liste.length) {
+    container.innerHTML =
+      "<p>Aucun prospect correspondant.</p>";
+    return;
+  }
+
+  let h =
+    "<table>" +
+    "<thead>" +
+    "<tr>" +
+    "<th>Nom</th>" +
+    "<th>Téléphone</th>" +
+    "<th>Service</th>" +
+    "<th>Ville</th>" +
+    "<th>Statut</th>" +
+    "</tr>" +
+    "</thead>" +
+    "<tbody>";
+
+  liste.slice(0, 20).forEach(p => {
+
+    h +=
+      "<tr>" +
+      "<td>" + escapeHtml(p.nom || "—") + "</td>" +
+      "<td>" + escapeHtml(p.telephone || p.whatsapp_id || "—") + "</td>" +
+      "<td>" + escapeHtml(p.service || "Non défini") + "</td>" +
+      "<td>" + escapeHtml(p.ville || "—") + "</td>" +
+      "<td><span class='status'>" +
+      escapeHtml(p.statut || "Nouveau") +
+      "</span></td>" +
+      "</tr>";
+  });
+
+  h += "</tbody></table>";
+
+  container.innerHTML = h;
+}
+
+
+function renderProspects() {
+  afficherProspects(prospects);
+}
 function addMessage(text,type){
  const d=document.createElement("div");d.className="msg "+type;d.textContent=text;
  document.getElementById("chat").appendChild(d);
