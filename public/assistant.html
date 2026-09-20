@@ -277,6 +277,25 @@ function afficherProspects(liste) {
 
 function renderProspects() {
   afficherProspects(prospects);
+}function ouvrirProspect(id) {
+
+  const prospect = prospects.find(p => String(p.id) === String(id));
+
+  if (!prospect) {
+    alert("Prospect introuvable.");
+    return;
+  }
+
+  alert(
+    "PROSPECT\n\n" +
+    "Nom : " + (prospect.nom || "—") + "\n" +
+    "Téléphone : " + (prospect.telephone || prospect.whatsapp_id || "—") + "\n" +
+    "Entreprise : " + (prospect.entreprise || "—") + "\n" +
+    "Ville : " + (prospect.ville || "—") + "\n" +
+    "Service : " + (prospect.service || "Non défini") + "\n" +
+    "Besoin : " + (prospect.besoin || "—") + "\n" +
+    "Statut : " + (prospect.statut || "Nouveau")
+  );
 }
 function addMessage(text,type){
  const d=document.createElement("div");d.className="msg "+type;d.textContent=text;
