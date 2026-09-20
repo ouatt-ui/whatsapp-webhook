@@ -239,17 +239,33 @@ function afficherProspects(liste) {
     "</thead>" +
     "<tbody>";
 
-  liste.slice(0, 20).forEach(p => {
+  liste.slice(0, 20).forEach((p) => {
 
-    h +=
-      "<tr>" +
-      "<td>" + escapeHtml(p.nom || "—") + "</td>" +
-      "<td>" + escapeHtml(p.telephone || p.whatsapp_id || "—") + "</td>" +
-      "<td>" + escapeHtml(p.service || "Non défini") + "</td>" +
-      "<td>" + escapeHtml(p.ville || "—") + "</td>" +
-      "<td><span class='status'>" +
+  h +=
+    "<tr style='cursor:pointer' " +
+    "onclick='ouvrirProspect(" + p.id + ")'>" +
+      "<td>" +
+      escapeHtml(p.nom || "—") +
+      "</td>" +
+
+      "<td>" +
+      escapeHtml(p.telephone || p.whatsapp_id || "—") +
+      "</td>" +
+
+      "<td>" +
+      escapeHtml(p.service || "Non défini") +
+      "</td>" +
+
+      "<td>" +
+      escapeHtml(p.ville || "—") +
+      "</td>" +
+
+      "<td>" +
+      "<span class='status'>" +
       escapeHtml(p.statut || "Nouveau") +
-      "</span></td>" +
+      "</span>" +
+      "</td>" +
+
       "</tr>";
   });
 
