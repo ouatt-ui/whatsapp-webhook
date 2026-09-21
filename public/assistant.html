@@ -294,7 +294,9 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 
   </div>
 
-</div><div id="prospectModal" class="modal"><script>
+</div>
+
+<script>
 let prospects=[],stats={};
 
 async function api(url){
@@ -469,8 +471,9 @@ function afficherProspects(liste) {
 
 function renderProspects() {
   afficherProspects(prospects);
-let prospectSelectionne = null;
+}
 
+let prospectSelectionne = null;
 
 function ouvrirProspect(id) {
 
@@ -585,17 +588,7 @@ function appelerProspect() {
     "tel:+" + String(numero).replace(/\D/g, "");
 }
 
-  alert(
-    "PROSPECT\n\n" +
-    "Nom : " + (prospect.nom || "—") + "\n" +
-    "Téléphone : " + (prospect.telephone || prospect.whatsapp_id || "—") + "\n" +
-    "Entreprise : " + (prospect.entreprise || "—") + "\n" +
-    "Ville : " + (prospect.ville || "—") + "\n" +
-    "Service : " + (prospect.service || "Non défini") + "\n" +
-    "Besoin : " + (prospect.besoin || "—") + "\n" +
-    "Statut : " + (prospect.statut || "Nouveau")
-  );
-}
+ 
 function addMessage(text,type){
  const d=document.createElement("div");d.className="msg "+type;d.textContent=text;
  document.getElementById("chat").appendChild(d);
