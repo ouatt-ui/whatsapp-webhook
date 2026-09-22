@@ -248,10 +248,28 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
         <div class="info-value" id="modalService">—</div>
       </div>
 
-      <div class="info-box">
-        <div class="info-label">Statut</div>
-        <div class="info-value" id="modalStatut">—</div>
-      </div>
+     <div class="info-box">
+  <div class="info-label">Statut commercial</div>
+
+  <select
+    id="modalStatut"
+    style="
+      width:100%;
+      padding:10px;
+      border:1px solid #ccd4df;
+      border-radius:8px;
+      font-size:14px;
+      background:white;
+    "
+  >
+    <option value="Nouveau">🆕 Nouveau</option>
+    <option value="En cours">🔵 En cours</option>
+    <option value="Qualifié">🟢 Qualifié</option>
+    <option value="Devis">📄 Devis</option>
+    <option value="Client">✅ Client</option>
+    <option value="Perdu">❌ Perdu</option>
+  </select>
+</div>
 
       <div class="info-box" style="grid-column:1/-1">
         <div class="info-label">Besoin / Projet</div>
@@ -506,8 +524,8 @@ function ouvrirProspect(id) {
   document.getElementById("modalService").textContent =
     prospect.service || "Non défini";
 
-  document.getElementById("modalStatut").textContent =
-    prospect.statut || "Nouveau";
+document.getElementById("modalStatut").value =
+  prospect.statut || "Nouveau";
 
   document.getElementById("modalBesoin").textContent =
     prospect.besoin || "—";
