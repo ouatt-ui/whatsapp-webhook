@@ -493,7 +493,63 @@ function renderProspects() {
 
 let prospectSelectionne = null;
 
-function ouvrirProspect(id) {
+function ouvrirProspect(id)async function enregistrerStatut() {
+
+  if (!prospectSelectionne) {
+    alert("Aucun prospect sélectionné.");
+    return;
+  }
+
+  const statut =
+    document.getElementById("modalStatut").value;
+
+  try {
+
+    const response = await fetch(
+      "/crm/prospect/" + prospectSelectionne.telephone,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          statut: statut
+        })
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(
+        data.error || "Erreur lors de l'enregistrement"
+      );
+    }
+
+    prospectSelectionne.statut = statut;
+
+    const prospect = prospects.find(
+      p => String(p.id) === String(prospectSelectionne.id)
+    );
+
+    if (prospect) {
+      prospect.statut = statut;
+    }
+
+    renderProspects();
+
+    alert("✅ Statut enregistré : " + statut);
+
+  } catch (error) {
+
+    console.error(error);
+
+    alert(
+      "❌ Impossible d'enregistrer le statut : " +
+      error.message
+    );
+  }
+} {
 
   const prospect = prospects.find(
     p => String(p.id) === String(id)
