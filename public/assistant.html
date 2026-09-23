@@ -291,8 +291,61 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 
     </div>
 
-    <div class="modal-actions">
+       </div>
 
+    <!-- NOTES COMMERCIALES -->
+    <div style="
+      margin:0 20px 20px;
+      padding:16px;
+      background:#f7f9fc;
+      border:1px solid #e2e7ef;
+      border-radius:10px;
+    ">
+      <div style="
+        font-size:14px;
+        font-weight:bold;
+        margin-bottom:10px;
+      ">
+        📝 Notes commerciales
+      </div>
+
+      <textarea
+        id="nouvelleNote"
+        placeholder="Écrire une note sur ce prospect..."
+        style="
+          width:100%;
+          min-height:90px;
+          padding:12px;
+          border:1px solid #ccd4df;
+          border-radius:8px;
+          resize:vertical;
+          font-family:Arial,sans-serif;
+          font-size:14px;
+        "
+      ></textarea>
+
+      <button
+        onclick="ajouterNote()"
+        style="
+          margin-top:10px;
+          background:#0b3d91;
+          color:white;
+        "
+      >
+        📝 Ajouter la note
+      </button>
+
+      <div
+        id="listeNotes"
+        style="
+          margin-top:15px;
+        "
+      >
+        Chargement des notes...
+      </div>
+    </div>
+
+    <div class="modal-actions">
       <button
         class="action-whatsapp"
         onclick="ouvrirWhatsApp()">
