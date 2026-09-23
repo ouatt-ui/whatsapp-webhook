@@ -604,7 +604,174 @@ document
   .getElementById("prospectModal")
   .classList.add("show");
 
-chargerNotes();
+chargerNotes();async function chargerNotes() {
+
+  const container = document.getElementById("listeNotes");
+
+  if (!prospectSelectionne) {
+    container.innerHTML = "Aucun prospect sélectionné.";
+    return;
+  }
+
+  const numero =
+    prospectSelectionne.telephone ||
+    prospectSelectionne.whatsapp_id;
+
+  if (!numero) {
+    container.innerHTML =
+      "<p style='color:#b42318'>Numéro du prospect introuvable.</p>";
+    return;
+  }
+
+  container.innerHTML = "Chargement des notes...";
+
+  try {
+
+    const response = await fetch(
+      "/crm/notes/" + encodeURIComponent(numero)
+    );
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(
+        data.message || "Impossible de charger les notes."
+      );
+    }
+
+    const notes = data.notes || [];
+
+    if (!notes.length) {
+
+      container.innerHTML =
+        "<p style='color:#667085'>" +
+        "Aucune note commerciale enregistrée." +
+        "</p>";
+
+      return;
+    }
+
+    container.innerHTML = notes.map(note => `
+
+      <div style="
+        background:white;
+        border:1px solid #e2e7ef;
+        border-radius:8px;
+        padding:12px;
+        margin-bottom:10px;
+      ">
+
+        <div style="
+          font-size:12px;
+          color:#667085;
+          margin-bottom:6px;
+        ">
+          👤 ${escapeHtml(note.auteur || "Commercial")}
+          — ${formaterDate(note.created_at)}
+        </div>
+
+        <div style="
+          font-size:14px;
+          line-height:1.5;
+          white-space:pre-line;
+        ">
+          ${escapeHtml(note.note)}
+        </div>
+
+      </div>
+
+    `).join("");
+
+  } catch (error) {
+
+    console.error(
+      "Erreur chargement notes :",
+      error
+    );
+
+    container.innerHTML =
+      "<p style='color:#b42318'>" +
+      "❌ Impossible de charger les notes : " +
+      escapeHtml(error.message) +
+      "</p>";
+  }
+}
+
+
+async function ajouterNote() {
+
+  if (!prospectSelectionne) {
+    alert("Aucun prospect sélectionné.");
+    return;
+  }
+
+  const textarea =
+    document.getElementById("nouvelleNote");
+
+  const note =
+    textarea.value.trim();
+
+  if (!note) {
+    alert("Veuillez saisir une note.");
+    textarea.focus();
+    return;
+  }
+
+  const numero =
+    prospectSelectionne.telephone ||
+    prospectSelectionne.whatsapp_id;
+
+  if (!numero) {
+    alert("Numéro du prospect introuvable.");
+    return;
+  }
+
+  try {
+
+    const response = await fetch(
+      "/crm/notes/" + encodeURIComponent(numero),
+      {
+        method: "POST",
+
+        headers: {
+          "Content-Type": "application/json"
+        },
+
+        body: JSON.stringify({
+          note: note,
+          auteur: "Commercial"
+        })
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(
+        data.message ||
+        "Impossible d'enregistrer la note."
+      );
+    }
+
+    textarea.value = "";
+
+    await chargerNotes();
+
+    alert("✅ Note commerciale enregistrée.");
+
+  } catch (error) {
+
+    console.error(
+      "Erreur ajout note :",
+      error
+    );
+
+    alert(
+      "❌ Impossible d'enregistrer la note : " +
+      error.message
+    );
+  }
+}
 }
 async function enregistrerStatut() {
 
