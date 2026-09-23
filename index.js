@@ -29,12 +29,48 @@ async function initDatabase(){
   console.log(`   Host: ${dbConfig.host}\n   Port: ${dbConfig.port}\n   User: ${dbConfig.user}\n   Database: ${dbConfig.database}`);
   console.log(`   CA Aiven: ${process.env.AIVEN_CA_CERT?"présent":"absent"}`);
   pool=mysql.createPool(dbConfig); const c=await pool.getConnection(); await c.ping(); c.release();
-  await pool.query(`CREATE TABLE IF NOT EXISTS prospects(
-   id INT AUTO_INCREMENT PRIMARY KEY, whatsapp_id VARCHAR(30) NOT NULL UNIQUE, nom VARCHAR(150),
-   telephone VARCHAR(30), entreprise VARCHAR(150), ville VARCHAR(100), service VARCHAR(150),
-   besoin TEXT, statut VARCHAR(50) DEFAULT 'Nouveau', notes TEXT,
-   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+ await pool.query(`CREATE TABLE IF NOT EXISTS prospects(
+   id INT AUTO_INCREMENT PRIMARY KEY,
+   whatsapp_id VARCHAR(30) NOT NULL UNIQUE,
+   nom VARCHAR(150),
+   telephone VARCHAR(30),
+   entreprise VARCHAR(150),
+   ville VARCHAR(100),
+   service VARCHAR(150),
+   besoin TEXT,
+   statut VARCHAR(50) DEFAULT 'Nouveau',
+   etat_conversation VARCHAR(20) DEFAULT 'ACTIF',
+   notes TEXT,
+   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);// Migration V2 : séparation du statut commercial et de l'état du chatbot
+const [columns] = await pool.query(`
+  SELECT COUNT(*) AS total
+  FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'prospects'
+    AND COLUMN_NAME = 'etat_conversation'
+`);
+
+if (Number(columns[0].total) === 0) {
+  await pool.query(`
+    ALTER TABLE prospects
+    ADD COLUMN etat_conversation VARCHAR(20) DEFAULT 'ACTIF'
+  `);
+
+  console.log("✅ MYSQL : colonne etat_conversation ajoutée.");
+}
+
+// Migration des anciennes valeurs "Terminé"
+// L'ancien système utilisait statut="Terminé" pour indiquer
+// que la conversation WhatsApp était terminée.
+await pool.query(`
+  UPDATE prospects
+  SET
+    etat_conversation = 'TERMINE',
+    statut = 'Nouveau'
+  WHERE statut = 'Terminé'
+`);
   await pool.query(`CREATE TABLE IF NOT EXISTS messages(
    id BIGINT AUTO_INCREMENT PRIMARY KEY, prospect_id INT NULL, whatsapp_message_id VARCHAR(255) NULL,
    direction ENUM('entrant','sortant') NOT NULL, message TEXT NULL, message_type VARCHAR(50) DEFAULT 'text',
@@ -58,14 +94,56 @@ async function initDatabase(){
  }
 }
 async function upsertProspect(s){
- if(!dbReady||!pool||!s?.phone)return null;
- try{
-  await pool.query(`INSERT INTO prospects(whatsapp_id,nom,telephone,ville,service,besoin,statut)
-   VALUES(?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE nom=VALUES(nom),telephone=VALUES(telephone),
-   ville=VALUES(ville),service=VALUES(service),besoin=VALUES(besoin),statut=VALUES(statut),updated_at=CURRENT_TIMESTAMP`,
-   [s.phone,s.name||null,s.phone,s.location||null,s.service||null,s.project||null,s.state==="DONE"?"Terminé":"Nouveau"]);
-  return await getProspectId(s.phone);
- }catch(e){console.error("❌ MYSQL : erreur upsertProspect :",e.message);return null;}
+  if(!dbReady||!pool||!s?.phone)return null;
+
+  try{
+    const etatConversation =
+      s.state === "DONE"
+        ? "TERMINE"
+        : "ACTIF";
+
+    await pool.query(
+      `INSERT INTO prospects(
+        whatsapp_id,
+        nom,
+        telephone,
+        ville,
+        service,
+        besoin,
+        statut,
+        etat_conversation
+      )
+      VALUES(?,?,?,?,?,?,?,?)
+
+      ON DUPLICATE KEY UPDATE
+        nom=VALUES(nom),
+        telephone=VALUES(telephone),
+        ville=VALUES(ville),
+        service=VALUES(service),
+        besoin=VALUES(besoin),
+        etat_conversation=VALUES(etat_conversation),
+        updated_at=CURRENT_TIMESTAMP`,
+      [
+        s.phone,
+        s.name||null,
+        s.phone,
+        s.location||null,
+        s.service||null,
+        s.project||null,
+        "Nouveau",
+        etatConversation
+      ]
+    );
+
+    return await getProspectId(s.phone);
+
+  }catch(e){
+    console.error(
+      "❌ MYSQL : erreur upsertProspect :",
+      e.message
+    );
+    return null;
+  }
 }
 async function getProspectId(phone){
  if(!dbReady||!pool)return null; try{const[r]=await pool.query("SELECT id FROM prospects WHERE whatsapp_id=? LIMIT 1",[phone]);return r.length?r[0].id:null;}
@@ -82,10 +160,29 @@ async function loadProspect(phone){
  try{
   const[p]=await pool.query("SELECT * FROM prospects WHERE whatsapp_id=? LIMIT 1",[phone]); if(!p.length)return null;
   const x=p[0]; const[m]=await pool.query("SELECT direction,message,message_type,created_at FROM messages WHERE prospect_id=? ORDER BY id ASC LIMIT 100",[x.id]);
-  return {phone:x.whatsapp_id,name:x.nom||"",state:x.statut==="Terminé"?"DONE":"MENU",service:x.service||null,siteType:null,
-   location:x.ville||null,project:x.besoin||null,quantity:null,delay:null,
-   history:m.map(v=>({direction:v.direction,text:v.message,type:v.message_type,at:v.created_at})),
-   createdAt:x.created_at,updatedAt:x.updated_at};
+  return {
+  phone:x.whatsapp_id,
+  name:x.nom||"",
+  state:x.etat_conversation==="TERMINE"?"DONE":"MENU",
+  service:x.service||null,
+  siteType:null,
+  location:x.ville||null,
+  project:x.besoin||null,
+  quantity:null,
+  delay:null,
+
+  commercialStatus:x.statut||"Nouveau",
+
+  history:m.map(v=>({
+    direction:v.direction,
+    text:v.message,
+    type:v.message_type,
+    at:v.created_at
+  })),
+
+  createdAt:x.created_at,
+  updatedAt:x.updated_at
+};
  }catch(e){console.error("❌ MYSQL : erreur loadProspect :",e.message);return null;}
 }
 const SERVICES={"1":"Vidéosurveillance","2":"Contrôle d'accès","3":"Alarme intrusion","4":"SSI / CMSI","5":"Motorisation de portail","6":"Domotique","7":"Réseau informatique","8":"Demande de devis","9":"Conseiller"};
@@ -93,8 +190,33 @@ function normalizeForApi(phone){let n=String(phone).replace(/[^\d]/g,"");if(n===
 function isConversationStart(text){const n=String(text||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();return n==="menu"||n==="start"||n==="0"||/^(bonjour|bjr|bonsoir|slt|salut)\b/.test(n);}
 async function getSession(phone,name=""){
  if(sessions.has(phone)){const s=sessions.get(phone);if(name&&!s.name)s.name=name;return s;}
- const stored=await loadProspect(phone);if(stored){if(name&&!stored.name)stored.name=name;sessions.set(phone,stored);return stored;}
- const s={phone,name:name||"",state:"MENU",service:null,siteType:null,location:null,project:null,quantity:null,delay:null,history:[],createdAt:new Date(),updatedAt:new Date()};
+const stored=await loadProspect(phone);
+
+if(stored){
+  if(name&&!stored.name)stored.name=name;
+
+  if(!stored.commercialStatus){
+    stored.commercialStatus="Nouveau";
+  }
+
+  sessions.set(phone,stored);
+  return stored;
+}
+const s={
+  phone,
+  name:name||"",
+  state:"MENU",
+  service:null,
+  siteType:null,
+  location:null,
+  project:null,
+  quantity:null,
+  delay:null,
+  commercialStatus:"Nouveau",
+  history:[],
+  createdAt:new Date(),
+  updatedAt:new Date()
+};
  sessions.set(phone,s);await upsertProspect(s);return s;
 }
 async function addHistory(s,d,text,waId=null,type="text"){
