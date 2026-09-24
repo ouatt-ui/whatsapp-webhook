@@ -360,6 +360,49 @@ app.get("/assistant", (req, res) => {
   
 
 
-app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.3",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
+// ================== TEST ROBOT IA OUATT ==================
+
+app.get("/robot/test", async (req, res) => {
+  try {
+
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(500).json({
+        success: false,
+        message: "OPENAI_API_KEY absente dans Render."
+      });
+    }
+
+    if (!openai) {
+      return res.status(500).json({
+        success: false,
+        message: "Client OpenAI non initialisé."
+      });
+    }
+
+    const response = await openai.responses.create({
+      model: "gpt-4o-mini",
+      input: "Réponds uniquement : ROBOT OUATT OK"
+    });
+
+    res.json({
+      success: true,
+      message: response.output_text
+    });
+
+  } catch (error) {
+
+    console.error(
+      "❌ ERREUR TEST OPENAI :",
+      error.message
+    );
+
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// ================== FIN TEST ROBOT IA ==================app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.3",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
 async function start(){await initDatabase();app.listen(PORT,"0.0.0.0",()=>console.log(`VisionProtection WhatsApp CRM v2.5.3 - port ${PORT} - DB ${dbReady?"MYSQL":"MEMORY"}`));}
 start().catch(e=>{console.error("❌ ERREUR DÉMARRAGE :",e.message);process.exit(1);});
