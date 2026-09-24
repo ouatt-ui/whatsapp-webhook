@@ -1,9 +1,10 @@
 const express=require("express");
 const axios=require("axios");
-const mysql=require("mysql2/promise");const OpenAI=require("openai");
+const mysql=require("mysql2/promise");
+const {GoogleGenAI}=require("@google/genai");
 
-const openai=process.env.OPENAI_API_KEY
-  ? new OpenAI({apiKey:process.env.OPENAI_API_KEY})
+const gemini=process.env.GEMINI_API_KEY
+  ? new GoogleGenAI({apiKey:process.env.GEMINI_API_KEY})
   : null;
 const app=express(); app.use(express.json());
 const PORT=process.env.PORT||3000;
@@ -360,39 +361,39 @@ app.get("/assistant", (req, res) => {
   
 
 
-// ================== TEST ROBOT IA OUATT ==================
+// ================== TEST ROBOT IA GEMINI ==================
 
 app.get("/robot/test", async (req, res) => {
   try {
 
-    if (!process.env.OPENAI_API_KEY) {
+    if (!process.env.GEMINI_API_KEY) {
       return res.status(500).json({
         success: false,
-        message: "OPENAI_API_KEY absente dans Render."
+        message: "GEMINI_API_KEY absente dans Render."
       });
     }
 
-    if (!openai) {
+    if (!gemini) {
       return res.status(500).json({
         success: false,
-        message: "Client OpenAI non initialisé."
+        message: "Client Gemini non initialisé."
       });
     }
 
-    const response = await openai.responses.create({
-      model: "gpt-4o-mini",
-      input: "Réponds uniquement : ROBOT OUATT OK"
+    const response = await gemini.models.generateContent({
+      model: "gemini-3.8-flash",
+      contents: "Réponds uniquement : ROBOT OUATT GEMINI OK"
     });
 
     res.json({
       success: true,
-      message: response.output_text
+      message: response.text
     });
 
   } catch (error) {
 
     console.error(
-      "❌ ERREUR TEST OPENAI :",
+      "❌ ERREUR TEST GEMINI :",
       error.message
     );
 
@@ -403,6 +404,6 @@ app.get("/robot/test", async (req, res) => {
   }
 });
 
-// ================== FIN TEST ROBOT IA ==================app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.3",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
+// ================== FIN TEST ROBOT IA GEMINI ==================app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.3",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
 async function start(){await initDatabase();app.listen(PORT,"0.0.0.0",()=>console.log(`VisionProtection WhatsApp CRM v2.5.3 - port ${PORT} - DB ${dbReady?"MYSQL":"MEMORY"}`));}
 start().catch(e=>{console.error("❌ ERREUR DÉMARRAGE :",e.message);process.exit(1);});
