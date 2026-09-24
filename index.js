@@ -1,6 +1,10 @@
 const express=require("express");
 const axios=require("axios");
-const mysql=require("mysql2/promise");
+const mysql=require("mysql2/promise");const OpenAI=require("openai");
+
+const openai=process.env.OPENAI_API_KEY
+  ? new OpenAI({apiKey:process.env.OPENAI_API_KEY})
+  : null;
 const app=express(); app.use(express.json());
 const PORT=process.env.PORT||3000;
 const VERIFY_TOKEN=process.env.META_VERIFY_TOKEN||"visionprotection2024";
