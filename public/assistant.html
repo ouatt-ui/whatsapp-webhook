@@ -363,6 +363,12 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
           style="background:#198754;color:white;">
           💬 Ouvrir WhatsApp avec le message
         </button>
+        <button
+          type="button"
+          onclick="envoyerRelanceWhatsApp()"
+          style="background:#0f766e;color:white;">
+          🚀 Envoyer via WhatsApp Cloud API
+        </button>
       </div>
       <div style="margin-top:8px;color:#667085;font-size:12px;">
         Le message est uniquement préparé. Aucun envoi automatique n'est effectué.
@@ -880,6 +886,80 @@ function ouvrirWhatsAppAvecRelance() {
     "https://wa.me/" + propre + "?text=" + encodeURIComponent(message),
     "_blank"
   );
+}
+
+async function envoyerRelanceWhatsApp() {
+  if (!prospectSelectionne) {
+    alert("Aucun prospect sélectionné.");
+    return;
+  }
+
+  const textarea = document.getElementById("messageRelance");
+  const message = textarea ? textarea.value.trim() : "";
+
+  if (!message) {
+    alert("Le message de relance est vide.");
+    return;
+  }
+
+  const numero =
+    prospectSelectionne.telephone ||
+    prospectSelectionne.whatsapp_id;
+
+  if (!numero) {
+    alert("Numéro WhatsApp introuvable.");
+    return;
+  }
+
+  const nom = prospectSelectionne.nom || "ce prospect";
+
+  const confirmation = confirm(
+    "Confirmer l'envoi réel du message WhatsApp à " + nom + " ?\n\n" +
+    "Le message sera envoyé immédiatement via WhatsApp Cloud API."
+  );
+
+  if (!confirmation) return;
+
+  const boutons = Array.from(
+    document.querySelectorAll('#prospectModal button')
+  );
+  boutons.forEach(b => b.disabled = true);
+
+  try {
+    const response = await fetch("/robot/relance-whatsapp", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        phone: numero,
+        message: message
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || "Échec de l'envoi WhatsApp.");
+    }
+
+    alert(
+      "✅ Relance WhatsApp envoyée avec succès à " + nom + ".\n\n" +
+      "Le message a également été enregistré dans le CRM."
+    );
+
+    // La dernière activité devient récente : le prospect sort de la liste de relance.
+    await detecterRelances();
+
+    const modal = document.getElementById("prospectModal");
+    if (modal) modal.classList.remove("show");
+
+  } catch (error) {
+    console.error("Erreur envoi relance WhatsApp :", error);
+    alert("❌ Envoi impossible : " + error.message);
+  } finally {
+    boutons.forEach(b => b.disabled = false);
+  }
 }
 
 function renderProspects() {
