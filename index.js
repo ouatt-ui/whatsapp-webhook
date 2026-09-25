@@ -429,7 +429,154 @@ app.get("/crm/stats",async(req,res)=>{try{if(dbReady){const[[t]]=await pool.quer
 app.get("/assistant", (req, res) => {
   res.sendFile(__dirname + "/public/assistant.html");
 });
-  
+  // ================== PROSPECTS À RELANCER V1 ==================
+
+app.get("/robot/prospects-relance", async (req, res) => {
+
+  try {
+
+    if (!dbReady || !pool) {
+      return res.status(503).json({
+        success: false,
+        message: "Base MySQL non disponible."
+      });
+    }
+
+    const [prospects] = await pool.query(`
+      SELECT
+        p.id,
+        p.nom,
+        p.telephone,
+        p.ville,
+        p.service,
+        p.besoin,
+        p.statut,
+        p.etat_conversation,
+        p.created_at,
+        p.updated_at,
+
+        (
+          SELECT MAX(m.created_at)
+          FROM messages m
+          WHERE m.prospect_id = p.id
+        ) AS dernier_message
+
+      FROM prospects p
+
+      WHERE p.statut IN (
+        'Nouveau',
+        'En cours',
+        'Qualifié',
+        'Devis'
+      )
+
+      AND p.statut NOT IN (
+        'Client',
+        'Perdu'
+      )
+
+      ORDER BY
+        COALESCE(
+          (
+            SELECT MAX(m.created_at)
+            FROM messages m
+            WHERE m.prospect_id = p.id
+          ),
+          p.updated_at
+        ) ASC
+
+      LIMIT 100
+    `);
+
+
+    const maintenant = Date.now();
+
+    const relances = prospects.map(p => {
+
+      const derniereActivite =
+        p.dernier_message || p.updated_at || p.created_at;
+
+      const dateActivite =
+        new Date(derniereActivite);
+
+      const ageJours = Math.floor(
+        (maintenant - dateActivite.getTime())
+        / (1000 * 60 * 60 * 24)
+      );
+
+      let priorite = "NORMALE";
+
+      if (ageJours >= 7) {
+        priorite = "HAUTE";
+      } else if (ageJours >= 3) {
+        priorite = "MOYENNE";
+      }
+
+      return {
+        id: p.id,
+        nom: p.nom || "Sans nom",
+        telephone: p.telephone,
+        ville: p.ville || "Non définie",
+        service: p.service || "Non défini",
+        besoin: p.besoin || "",
+        statut: p.statut,
+        etat_conversation: p.etat_conversation,
+
+        derniere_activite: derniereActivite,
+
+        jours_depuis_activite: ageJours,
+
+        priorite: priorite,
+
+        action: "RELANCE À PRÉPARER"
+      };
+
+    });
+
+
+    res.json({
+
+      success: true,
+
+      robot: "VisionProtection - Prospects à relancer V1",
+
+      total: relances.length,
+
+      priorite_haute:
+        relances.filter(x => x.priorite === "HAUTE").length,
+
+      priorite_moyenne:
+        relances.filter(x => x.priorite === "MOYENNE").length,
+
+      priorite_normale:
+        relances.filter(x => x.priorite === "NORMALE").length,
+
+      prospects: relances,
+
+      generated_at: new Date().toISOString(),
+
+      database: "mysql"
+
+    });
+
+
+  } catch (error) {
+
+    console.error(
+      "❌ ERREUR PROSPECTS À RELANCER :",
+      error.message
+    );
+
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+
+  }
+
+});
+
+// ================== FIN PROSPECTS À RELANCER V1 ==================
 // ================== ROBOT IA COMMERCIAL GEMINI ==================
 
 app.get("/robot/test", async (req, res) => {
