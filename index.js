@@ -262,7 +262,14 @@ async function loadProspect(phone){
  }catch(e){console.error("❌ MYSQL : erreur loadProspect :",e.message);return null;}
 }
 const SERVICES={"1":"Vidéosurveillance","2":"Contrôle d'accès","3":"Alarme intrusion","4":"SSI / CMSI","5":"Motorisation de portail","6":"Domotique","7":"Réseau informatique","8":"Demande de devis","9":"Conseiller"};
-function normalizeForApi(phone){let n=String(phone).replace(/[^\d]/g,"");if(n==="22557948536")return"2250757948536";return n;}
+function normalizeForApi(phone){
+  let n=String(phone||"").replace(/[^\\d]/g,"");
+  if(n.startsWith("00")) n=n.slice(2);
+  if(n.startsWith("225")) return n;
+  if(n.startsWith("0")) return "225"+n.slice(1);
+  if(n.length===9) return "225"+n;
+  return n;
+}
 function isConversationStart(text){const n=String(text||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();return n==="menu"||n==="start"||n==="0"||/^(bonjour|bjr|bonsoir|slt|salut)\b/.test(n);}
 async function getSession(phone,name=""){
  if(sessions.has(phone)){const s=sessions.get(phone);if(name&&!s.name)s.name=name;return s;}
@@ -599,6 +606,7 @@ app.post("/robot/relance-whatsapp", async (req, res) => {
 
     const phone = String(req.body?.phone || "").trim();
     const message = String(req.body?.message || "").trim();
+    const phoneApi = normalizeForApi(phone);
 
     if (!phone) {
       return res.status(400).json({
@@ -617,9 +625,9 @@ app.post("/robot/relance-whatsapp", async (req, res) => {
     const [rows] = await pool.query(
       `SELECT id, whatsapp_id, telephone, nom, statut
        FROM prospects
-       WHERE whatsapp_id=? OR telephone=?
+       WHERE whatsapp_id=? OR telephone=? OR whatsapp_id=? OR telephone=?
        LIMIT 1`,
-      [phone, phone]
+      [phone, phone, phoneApi, phoneApi]
     );
 
     if (!rows.length) {
@@ -639,7 +647,7 @@ app.post("/robot/relance-whatsapp", async (req, res) => {
       });
     }
 
-    const destinataire = prospect.whatsapp_id || prospect.telephone;
+    const destinataire = normalizeForApi(prospect.whatsapp_id || prospect.telephone);
 
     // Envoi réel via WhatsApp Cloud API.
     const whatsappResult = await sendText(destinataire, message);
@@ -973,6 +981,6 @@ const modelUtilise = aiResult.model;
 });
 
 // ================== FIN ROBOT IA COMMERCIAL ==================
-app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.3",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
-async function start(){await initDatabase();app.listen(PORT,"0.0.0.0",()=>console.log(`VisionProtection WhatsApp CRM v2.5.3 - port ${PORT} - DB ${dbReady?"MYSQL":"MEMORY"}`));}
+app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.4",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
+async function start(){await initDatabase();app.listen(PORT,"0.0.0.0",()=>console.log(`VisionProtection WhatsApp CRM v2.5.4 - port ${PORT} - DB ${dbReady?"MYSQL":"MEMORY"}`));}
 start().catch(e=>{console.error("❌ ERREUR DÉMARRAGE :",e.message);process.exit(1);});
