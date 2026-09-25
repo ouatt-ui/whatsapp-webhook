@@ -585,6 +585,117 @@ AND COALESCE(
 });
 
 // ================== FIN PROSPECTS À RELANCER V1 ==================
+
+// ================== ENVOI RELANCE WHATSAPP V1.3 ==================
+
+app.post("/robot/relance-whatsapp", async (req, res) => {
+  try {
+    if (!dbReady || !pool) {
+      return res.status(503).json({
+        success: false,
+        message: "Base MySQL non disponible."
+      });
+    }
+
+    const phone = String(req.body?.phone || "").trim();
+    const message = String(req.body?.message || "").trim();
+
+    if (!phone) {
+      return res.status(400).json({
+        success: false,
+        message: "Numéro WhatsApp obligatoire."
+      });
+    }
+
+    if (!message) {
+      return res.status(400).json({
+        success: false,
+        message: "Le message de relance est vide."
+      });
+    }
+
+    const [rows] = await pool.query(
+      `SELECT id, whatsapp_id, telephone, nom, statut
+       FROM prospects
+       WHERE whatsapp_id=? OR telephone=?
+       LIMIT 1`,
+      [phone, phone]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: "Prospect introuvable."
+      });
+    }
+
+    const prospect = rows[0];
+    const statutsAutorises = ["Nouveau", "En cours", "Qualifié", "Devis"];
+
+    if (!statutsAutorises.includes(prospect.statut)) {
+      return res.status(409).json({
+        success: false,
+        message: `Envoi de relance interdit pour le statut « ${prospect.statut} ».`
+      });
+    }
+
+    const destinataire = prospect.whatsapp_id || prospect.telephone;
+
+    // Envoi réel via WhatsApp Cloud API.
+    const whatsappResult = await sendText(destinataire, message);
+
+    // Journalisation du message sortant dans le CRM.
+    await pool.query(
+      `INSERT INTO messages(
+        prospect_id,
+        whatsapp_message_id,
+        direction,
+        message,
+        message_type
+      ) VALUES(?,?,?,?,?)`,
+      [
+        prospect.id,
+        whatsappResult?.messages?.[0]?.id || null,
+        "sortant",
+        message,
+        "text"
+      ]
+    );
+
+    await pool.query(
+      `UPDATE prospects
+       SET updated_at=CURRENT_TIMESTAMP
+       WHERE id=?`,
+      [prospect.id]
+    );
+
+    res.json({
+      success: true,
+      message: "Relance WhatsApp envoyée avec succès.",
+      prospect: {
+        id: prospect.id,
+        nom: prospect.nom,
+        telephone: prospect.telephone,
+        statut: prospect.statut
+      },
+      whatsapp: whatsappResult,
+      database: "mysql"
+    });
+  } catch (error) {
+    console.error(
+      "❌ ERREUR ENVOI RELANCE WHATSAPP :",
+      error.response?.data || error.message
+    );
+
+    res.status(500).json({
+      success: false,
+      message: error.response?.data?.error?.message || error.message
+    });
+  }
+});
+
+// ================== FIN ENVOI RELANCE WHATSAPP V1.3 ==================
+
 // ================== ROBOT IA COMMERCIAL GEMINI ==================
 
 app.get("/robot/test", async (req, res) => {
