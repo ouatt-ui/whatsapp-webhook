@@ -850,8 +850,8 @@ const modelUtilise = aiResult.model;
     message: error.message,
     robot: "VisionProtection Robot IA"
   });
-
-}
+  }
+});
 
 // ================== FIN ROBOT IA COMMERCIAL ==================
 app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.3",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
