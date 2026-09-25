@@ -122,6 +122,24 @@ button{border:0;border-radius:8px;padding:11px 15px;cursor:pointer;font-weight:b
 .inputrow{display:flex;gap:10px;margin-top:12px}input{flex:1;padding:12px;border:1px solid #ccd4df;border-radius:8px;font-size:15px}
 table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;border-bottom:1px solid #edf0f5;font-size:14px}th{color:#667085}
 .status{font-size:12px;padding:5px 8px;border-radius:12px;background:#eef3f8}
+.relance-panel{display:none;margin-bottom:18px;background:white;border:1px solid #e2e7ef;border-radius:12px;padding:18px}
+.relance-panel.show{display:block}
+.relance-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.relance-head h2{margin:0}
+.relance-summary{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
+.relance-badge{padding:7px 11px;border-radius:18px;font-size:13px;font-weight:bold;background:#eef3f8}
+.relance-badge.high{background:#fde7e7;color:#b42318}
+.relance-badge.medium{background:#fff2cc;color:#8a5a00}
+.relance-list{display:grid;gap:10px;margin-top:12px}
+.relance-item{border:1px solid #e2e7ef;border-radius:10px;padding:14px;background:#f9fbfd}
+.relance-item-head{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}
+.relance-name{font-weight:bold;font-size:16px}
+.relance-meta{color:#667085;font-size:13px;line-height:1.5;margin-top:6px}
+.relance-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.relance-actions button{width:auto}
+.relance-high{border-left:5px solid #b42318}
+.relance-medium{border-left:5px solid #d99b00}
+
 @media(max-width:900px){.layout{grid-template-columns:1fr}aside{display:none}.cards{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:550px){.cards{grid-template-columns:1fr}main{padding:14px}}
 </style>
@@ -139,7 +157,8 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 <button class="primary" onclick="loadData()">Actualiser les données</button>
 <button class="secondary" onclick="ask('Quels sont les prospects actuellement dans le CRM ?')">Voir les prospects</button>
 <button class="secondary" onclick="ask('Donne-moi les statistiques du CRM.')">Voir les statistiques</button>
-<button class="secondary" onclick="ask('Quels prospects dois-je examiner pour une relance ?')">Préparer les relances</button>
+<button class="secondary" onclick="detecterRelances()">Préparer les relances</button>
+<button class="secondary" onclick="detecterRelances()">🔎 Détecter les prospects à relancer</button>
 </aside>
 
 <main>
@@ -159,6 +178,18 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 <input id="question" placeholder="Ex. Combien avons-nous de prospects ?" onkeydown="if(event.key==='Enter')ask()">
 <button class="primary" style="width:auto" onclick="ask()">Envoyer</button>
 </div>
+</section>
+
+
+<section id="relancePanel" class="relance-panel">
+  <div class="relance-head">
+    <h2>🔎 Prospects à relancer</h2>
+    <button class="secondary" style="width:auto;margin-top:0" onclick="detecterRelances()">↻ Actualiser</button>
+  </div>
+  <div id="relanceSummary" class="relance-summary"></div>
+  <div id="relanceList" class="relance-list">
+    <p style="color:#667085">Cliquez sur « Détecter les prospects à relancer ».</p>
+  </div>
 </section>
 
 <section class="panel">
@@ -548,6 +579,133 @@ function afficherProspects(liste) {
 }
 
 
+async function detecterRelances() {
+
+  const panel = document.getElementById("relancePanel");
+  const summary = document.getElementById("relanceSummary");
+  const list = document.getElementById("relanceList");
+
+  panel.classList.add("show");
+  list.innerHTML = "<p>🔎 Analyse des prospects...</p>";
+  summary.innerHTML = "";
+
+  try {
+
+    const data = await api("/robot/prospects-relance");
+
+    if (!data.success) {
+      throw new Error(data.message || "Impossible de détecter les relances.");
+    }
+
+    // Filtrage réel côté interface :
+    // seuls les prospects sans activité depuis au moins 3 jours sont conservés.
+    const relances = (data.prospects || [])
+      .filter(p => Number(p.jours_depuis_activite || 0) >= 3)
+      .sort((a,b) => {
+        const pa = a.priorite === "HAUTE" ? 0 : 1;
+        const pb = b.priorite === "HAUTE" ? 0 : 1;
+        return pa - pb || Number(b.jours_depuis_activite || 0) - Number(a.jours_depuis_activite || 0);
+      });
+
+    const hautes = relances.filter(p => p.priorite === "HAUTE").length;
+    const moyennes = relances.filter(p => p.priorite === "MOYENNE").length;
+
+    summary.innerHTML =
+      '<span class="relance-badge high">🔴 Priorité haute : ' + hautes + '</span>' +
+      '<span class="relance-badge medium">🟠 Priorité moyenne : ' + moyennes + '</span>' +
+      '<span class="relance-badge">Total : ' + relances.length + '</span>';
+
+    if (!relances.length) {
+      list.innerHTML =
+        '<p style="color:#667085">✅ Aucun prospect ne nécessite actuellement une relance (seuil : 3 jours sans activité).</p>';
+      return;
+    }
+
+    list.innerHTML = relances.map(p => {
+
+      const classe =
+        p.priorite === "HAUTE"
+          ? "relance-item relance-high"
+          : "relance-item relance-medium";
+
+      const id = String(p.id || "").replace(/[^0-9]/g, "");
+
+      return `
+        <div class="${classe}">
+          <div class="relance-item-head">
+            <div class="relance-name">
+              ${escapeHtml(p.nom || "Sans nom")}
+            </div>
+            <span class="status">
+              ${escapeHtml(p.priorite || "NORMALE")}
+            </span>
+          </div>
+
+          <div class="relance-meta">
+            📱 ${escapeHtml(p.telephone || "—")}<br>
+            📍 ${escapeHtml(p.ville || "Non définie")}<br>
+            🔐 ${escapeHtml(p.service || "Non défini")}<br>
+            📌 Statut : ${escapeHtml(p.statut || "Nouveau")}<br>
+            ⏱️ ${escapeHtml(String(p.jours_depuis_activite || 0))} jour(s) sans activité
+          </div>
+
+          <div class="relance-actions">
+            <button
+              class="action-call"
+              onclick="ouvrirProspect(${id})">
+              👤 Voir prospect
+            </button>
+
+            <button
+              style="background:#0b3d91;color:white"
+              onclick="preparerRelance(${id})">
+              📝 Préparer relance
+            </button>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+  } catch (error) {
+
+    console.error("Erreur détection relances :", error);
+
+    list.innerHTML =
+      '<p style="color:#b42318">❌ Impossible de charger les prospects à relancer : ' +
+      escapeHtml(error.message) +
+      '</p>';
+  }
+}
+
+function preparerRelance(id) {
+
+  const prospect = prospects.find(
+    p => String(p.id) === String(id)
+  );
+
+  if (!prospect) {
+    // Le prospect vient du robot mais peut ne pas être présent dans le filtre actuel.
+    alert("Prospect trouvé par le robot. Utilisez « Voir prospect » pour ouvrir sa fiche.");
+    return;
+  }
+
+  ouvrirProspect(id);
+
+  setTimeout(() => {
+
+    const textarea = document.getElementById("nouvelleNote");
+
+    if (textarea) {
+      textarea.value =
+        "RELANCE À PRÉPARER — Prospect sans activité depuis " +
+        (prospect.jours_depuis_activite || "plusieurs") +
+        " jour(s).";
+      textarea.focus();
+    }
+
+  }, 150);
+}
+
 function renderProspects() {
   afficherProspects(prospects);
 }
@@ -555,11 +713,23 @@ function renderProspects() {
 let prospectSelectionne = null;
 
 
-function ouvrirProspect(id) {
+async function ouvrirProspect(id) {
 
-  const prospect = prospects.find(
+  let prospect = prospects.find(
     p => String(p.id) === String(id)
   );
+
+  if (!prospect) {
+    try {
+      const data = await api("/crm/prospects");
+      const liste = data.prospects || [];
+      prospect = liste.find(
+        p => String(p.id) === String(id)
+      );
+    } catch (error) {
+      console.error("Erreur chargement prospect :", error);
+    }
+  }
 
   if (!prospect) {
     alert("Prospect introuvable.");
