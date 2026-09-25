@@ -768,13 +768,14 @@ async function ouvrirProspect(id) {
   document.getElementById("modalUpdated").textContent =
     formaterDate(prospect.updated_at);
 
-  
-}
-document
-  .getElementById("prospectModal")
-  .classList.add("show");
+  document
+    .getElementById("prospectModal")
+    .classList.add("show");
 
-chargerNotes();async function chargerNotes() {
+  await chargerNotes();
+}
+
+async function chargerNotes() {
 
   const container = document.getElementById("listeNotes");
 
