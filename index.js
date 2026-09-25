@@ -474,7 +474,15 @@ app.get("/robot/prospects-relance", async (req, res) => {
         'Client',
         'Perdu'
       )
-
+AND COALESCE(
+  (
+    SELECT MAX(m.created_at)
+    FROM messages m
+    WHERE m.prospect_id = p.id
+  ),
+  p.updated_at,
+  p.created_at
+) <= NOW() - INTERVAL 3 DAY
       ORDER BY
         COALESCE(
           (
