@@ -4,78 +4,73 @@ const mysql=require("mysql2/promise");
 const {GoogleGenAI}=require("@google/genai");
 // ================== APPEL GEMINI ROBUSTE ==================
 
-async function callGeminiWithRetry(prompt) {
+async function callGemini(prompt) {
 
-  const models = [
-    "gemini-3.8-flash",
-    "gemini-3.5-flash",
-    "gemini-3.5-flash-lite"
-  ];
-
-  let lastError = null;
-
-  for (const model of models) {
-
-    for (let attempt = 1; attempt <= 2; attempt++) {
-
-      try {
-
-        console.log(
-          `🤖 Gemini : ${model} | tentative ${attempt}`
-        );
-
-        const response = await gemini.models.generateContent({
-          model: model,
-          contents: prompt
-        });
-
-        console.log(
-          `✅ Gemini OK avec ${model}`
-        );
-
-        return {
-          text: response.text || "",
-          model: model
-        };
-
-      } catch (error) {
-
-        lastError = error;
-
-        const message = error.message || "";
-
-        console.error(
-          `❌ Gemini ${model} tentative ${attempt}:`,
-          message
-        );
-
-        const isTemporary =
-          message.includes("503") ||
-          message.includes("UNAVAILABLE") ||
-          message.includes("high demand") ||
-          message.includes("overloaded");
-
-        if (!isTemporary) {
-          throw error;
-        }
-
-        if (attempt < 2) {
-
-          const delay = attempt === 1 ? 3000 : 6000;
-
-          console.log(
-            `⏳ Attente ${delay / 1000}s avant nouvelle tentative...`
-          );
-
-          await new Promise(resolve =>
-            setTimeout(resolve, delay)
-          );
-        }
-      }
-    }
+  if (!gemini) {
+    throw new Error("Client Gemini non initialisé.");
   }
 
-  throw lastError;
+  try {
+
+    console.log("🤖 Appel Gemini...");
+
+    const response = await gemini.models.generateContent({
+      model: "gemini-3.8-flash",
+      contents: prompt
+    });
+
+    console.log("✅ Gemini a répondu.");
+
+    return {
+      text: response.text || "",
+      model: "gemini-3.8-flash"
+    };
+
+  } catch (error) {
+
+    const message = error.message || "";
+
+    console.error(
+      "❌ ERREUR GEMINI :",
+      message
+    );
+
+    // =========================
+    // QUOTA QUOTIDIEN ATTEINT
+    // =========================
+
+    if (
+      message.includes("GenerateRequestsPerDay") ||
+      message.includes("quotaValue") ||
+      message.includes("daily quota") ||
+      message.includes("RESOURCE_EXHAUSTED")
+    ) {
+
+      throw new Error(
+        "QUOTA GEMINI ATTEINT. " +
+        "Le Robot IA pourra être réutilisé après la réinitialisation du quota."
+      );
+    }
+
+    // =========================
+    // GEMINI TEMPORAIREMENT INDISPONIBLE
+    // =========================
+
+    if (
+      message.includes("503") ||
+      message.includes("UNAVAILABLE") ||
+      message.includes("high demand") ||
+      message.includes("overloaded")
+    ) {
+
+      throw new Error(
+        "GEMINI TEMPORAIREMENT INDISPONIBLE. " +
+        "Réessayez dans quelques minutes."
+      );
+    }
+
+    throw error;
+  }
 }
 
 // ================== FIN APPEL GEMINI ROBUSTE ==================
@@ -664,12 +659,11 @@ Tu fournis uniquement une analyse et des recommandations.
     // 7. APPEL GEMINI
     // ==========================================
 
-    const aiResult = await callGeminiWithRetry(prompt);
+const aiResult = await callGemini(prompt);
 
 const rapport = aiResult.text || "Aucun rapport généré.";
 
 const modelUtilise = aiResult.model;
-
     // ==========================================
     // 8. RÉPONSE AU CRM
     // ==========================================
@@ -697,22 +691,20 @@ const modelUtilise = aiResult.model;
 });
 
 
-  } catch (error) {
+ } catch (error) {
 
-    console.error(
-      "❌ ERREUR ROBOT IA :",
-      error.response?.data || error.message
-    );
+  console.error(
+    "❌ ERREUR ROBOT IA :",
+    error.message
+  );
 
-    res.status(500).json({
-      success: false,
-      message: "Erreur du Robot IA.",
-      error: error.message
-    });
+  res.status(429).json({
+    success: false,
+    message: error.message,
+    robot: "VisionProtection Robot IA"
+  });
 
-  }
-
-});
+}
 
 // ================== FIN ROBOT IA COMMERCIAL ==================
 app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.3",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
