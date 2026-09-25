@@ -147,7 +147,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 <body>
 <header>
 <div class="brand">🛡️ VisionProtection</div>
-<div class="badge">Assistant Commercial IA — V1</div>
+<div class="badge">Assistant Commercial IA — V1.2.2</div>
 </header>
 
 <div class="layout">
@@ -323,6 +323,52 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
     </div>
 
 
+    <!-- MESSAGE DE RELANCE V1.2.2 -->
+    <div style="
+      margin:0 20px 20px;
+      padding:16px;
+      background:#eef6ff;
+      border:1px solid #c9def7;
+      border-radius:10px;
+    ">
+      <div style="font-size:14px;font-weight:bold;margin-bottom:10px;">
+        📱 Message de relance V1.2.2
+      </div>
+      <textarea
+        id="messageRelance"
+        placeholder="Le message de relance sera préparé ici..."
+        style="
+          width:100%;
+          min-height:130px;
+          padding:12px;
+          border:1px solid #ccd4df;
+          border-radius:8px;
+          resize:vertical;
+          font-family:Arial,sans-serif;
+          font-size:14px;
+          box-sizing:border-box;
+          background:white;
+        "
+      ></textarea>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+        <button
+          type="button"
+          onclick="copierMessageRelance()"
+          style="background:#0b3d91;color:white;">
+          📋 Copier le message
+        </button>
+        <button
+          type="button"
+          onclick="ouvrirWhatsAppAvecRelance()"
+          style="background:#198754;color:white;">
+          💬 Ouvrir WhatsApp avec le message
+        </button>
+      </div>
+      <div style="margin-top:8px;color:#667085;font-size:12px;">
+        Le message est uniquement préparé. Aucun envoi automatique n'est effectué.
+      </div>
+    </div>
+
     <!-- NOTES COMMERCIALES -->
     <div style="
       margin:0 20px 20px;
@@ -407,7 +453,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 </div>
 
 <script>
-let prospects=[],stats={};
+let prospects=[],stats={},relancesDetectees=[];
 
 async function api(url){
  const r=await fetch(url);
@@ -607,6 +653,8 @@ async function detecterRelances() {
         return pa - pb || Number(b.jours_depuis_activite || 0) - Number(a.jours_depuis_activite || 0);
       });
 
+    relancesDetectees = relances;
+
     const hautes = relances.filter(p => p.priorite === "HAUTE").length;
     const moyennes = relances.filter(p => p.priorite === "MOYENNE").length;
 
@@ -677,33 +725,161 @@ async function detecterRelances() {
   }
 }
 
+function genererMessageRelance(prospect) {
+  const nom = prospect?.nom && prospect.nom !== "Sans nom"
+    ? prospect.nom
+    : "Bonjour";
+
+  const service = prospect?.service && prospect.service !== "Non défini"
+    ? prospect.service
+    : "votre demande";
+
+  const besoin = String(prospect?.besoin || "").trim();
+
+  let message = "Bonjour " + (nom === "Bonjour" ? "" : nom) + ",\n\n";
+  message += "Nous revenons vers vous concernant " + service + ".\n\n";
+
+  if (besoin) {
+    message += "Vous nous aviez indiqué : " + besoin + ".\n\n";
+  }
+
+  message += "Nous souhaitons savoir si votre projet est toujours d'actualité et si vous souhaitez que notre équipe vous accompagne pour la suite.\n\n";
+  message += "Nous restons à votre disposition pour toute information complémentaire ou pour préparer votre devis.\n\n";
+  message += "Cordialement,\nVisionProtection & Informatique\nEfficacité et professionnalisme";
+
+  return message.replace("Bonjour ,", "Bonjour,");
+}
+
 function preparerRelance(id) {
 
-  const prospect = prospects.find(
+  const relance = relancesDetectees.find(
+    p => String(p.id) === String(id)
+  );
+
+  if (!relance) {
+    alert("Prospect de relance introuvable. Cliquez d'abord sur « Détecter les prospects à relancer ». ");
+    return;
+  }
+
+  const message = genererMessageRelance(relance);
+
+  // Si la fiche complète est déjà chargée, on l'utilise.
+  let prospect = prospects.find(
     p => String(p.id) === String(id)
   );
 
   if (!prospect) {
-    // Le prospect vient du robot mais peut ne pas être présent dans le filtre actuel.
-    alert("Prospect trouvé par le robot. Utilisez « Voir prospect » pour ouvrir sa fiche.");
+    prospect = {
+      id: relance.id,
+      nom: relance.nom,
+      telephone: relance.telephone,
+      whatsapp_id: relance.telephone,
+      ville: relance.ville,
+      service: relance.service,
+      besoin: relance.besoin,
+      statut: relance.statut,
+      etat_conversation: relance.etat_conversation,
+      updated_at: relance.derniere_activite
+    };
+  }
+
+  prospect._messageRelance = message;
+  prospect._joursRelance = relance.jours_depuis_activite;
+
+  ouvrirProspectObjet(prospect);
+}
+
+function ouvrirProspectObjet(prospect) {
+  prospectSelectionne = prospect;
+
+  const modal = document.getElementById("prospectModal");
+  if (modal) modal.classList.add("show");
+
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value || "—";
+  };
+
+  setText("modalTelephone", prospect.telephone || prospect.whatsapp_id);
+  setText("modalWhatsapp", prospect.whatsapp_id || prospect.telephone);
+  setText("modalEntreprise", prospect.entreprise);
+  setText("modalVille", prospect.ville);
+  setText("modalService", prospect.service);
+  setText("modalBesoin", prospect.besoin);
+  setText("modalCreated", formaterDate(prospect.created_at));
+  setText("modalUpdated", formaterDate(prospect.updated_at));
+
+  const statut = document.getElementById("modalStatut");
+  if (statut) statut.value = prospect.statut || "Nouveau";
+
+  const textarea = document.getElementById("nouvelleNote");
+  if (textarea) {
+    textarea.value =
+      "RELANCE À PRÉPARER — " +
+      (prospect._joursRelance || "plusieurs") +
+      " jour(s) sans activité.";
+  }
+
+  const messageBox = document.getElementById("messageRelance");
+  if (messageBox) {
+    messageBox.value = prospect._messageRelance || genererMessageRelance(prospect);
+  }
+
+  if (typeof chargerNotes === "function") {
+    chargerNotes();
+  }
+}
+
+async function copierMessageRelance() {
+  const textarea = document.getElementById("messageRelance");
+  if (!textarea || !textarea.value.trim()) {
+    alert("Aucun message de relance à copier.");
     return;
   }
 
-  ouvrirProspect(id);
+  try {
+    await navigator.clipboard.writeText(textarea.value);
+    alert("✅ Message de relance copié.");
+  } catch (error) {
+    textarea.select();
+    document.execCommand("copy");
+    alert("✅ Message de relance copié.");
+  }
+}
 
-  setTimeout(() => {
+function ouvrirWhatsAppAvecRelance() {
+  if (!prospectSelectionne) {
+    alert("Aucun prospect sélectionné.");
+    return;
+  }
 
-    const textarea = document.getElementById("nouvelleNote");
+  const textarea = document.getElementById("messageRelance");
+  const message = textarea ? textarea.value.trim() : "";
 
-    if (textarea) {
-      textarea.value =
-        "RELANCE À PRÉPARER — Prospect sans activité depuis " +
-        (prospect.jours_depuis_activite || "plusieurs") +
-        " jour(s).";
-      textarea.focus();
-    }
+  if (!message) {
+    alert("Le message de relance est vide.");
+    return;
+  }
 
-  }, 150);
+  const numero =
+    prospectSelectionne.telephone ||
+    prospectSelectionne.whatsapp_id;
+
+  if (!numero) {
+    alert("Numéro WhatsApp introuvable.");
+    return;
+  }
+
+  let propre = String(numero).replace(/\D/g, "");
+
+  if (propre.startsWith("0")) {
+    propre = "225" + propre.substring(1);
+  }
+
+  window.open(
+    "https://wa.me/" + propre + "?text=" + encodeURIComponent(message),
+    "_blank"
+  );
 }
 
 function renderProspects() {
@@ -768,14 +944,13 @@ async function ouvrirProspect(id) {
   document.getElementById("modalUpdated").textContent =
     formaterDate(prospect.updated_at);
 
-  document
-    .getElementById("prospectModal")
-    .classList.add("show");
-
-  await chargerNotes();
+  
 }
+document
+  .getElementById("prospectModal")
+  .classList.add("show");
 
-async function chargerNotes() {
+chargerNotes();async function chargerNotes() {
 
   const container = document.getElementById("listeNotes");
 
