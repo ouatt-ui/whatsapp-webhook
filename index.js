@@ -359,9 +359,7 @@ app.get("/assistant", (req, res) => {
   res.sendFile(__dirname + "/public/assistant.html");
 });
   
-
-
-// ================== TEST ROBOT IA GEMINI ==================
+// ================== ROBOT IA COMMERCIAL GEMINI ==================
 
 app.get("/robot/test", async (req, res) => {
   try {
@@ -404,7 +402,246 @@ app.get("/robot/test", async (req, res) => {
   }
 });
 
-// ================== FIN TEST ROBOT IA GEMINI ==================
+
+// ================== RAPPORT ROBOT IA ==================
+
+app.get("/robot/run", async (req, res) => {
+
+  try {
+
+    if (!dbReady || !pool) {
+      return res.status(503).json({
+        success: false,
+        message: "Base MySQL non disponible."
+      });
+    }
+
+    if (!gemini) {
+      return res.status(500).json({
+        success: false,
+        message: "Client Gemini non initialisé."
+      });
+    }
+
+
+    // ==========================================
+    // 1. STATISTIQUES COMMERCIALES 7 JOURS
+    // ==========================================
+
+    const [[global]] = await pool.query(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(statut='Nouveau') AS nouveaux,
+        SUM(statut='En cours') AS en_cours,
+        SUM(statut='Qualifié') AS qualifies,
+        SUM(statut='Devis') AS devis,
+        SUM(statut='Client') AS clients,
+        SUM(statut='Perdu') AS perdus
+      FROM prospects
+      WHERE created_at >= NOW() - INTERVAL 7 DAY
+    `);
+
+
+    // ==========================================
+    // 2. SERVICES LES PLUS DEMANDÉS
+    // ==========================================
+
+    const [services] = await pool.query(`
+      SELECT
+        COALESCE(service,'Non défini') AS service,
+        COUNT(*) AS total
+      FROM prospects
+      WHERE created_at >= NOW() - INTERVAL 7 DAY
+      GROUP BY service
+      ORDER BY total DESC
+      LIMIT 10
+    `);
+
+
+    // ==========================================
+    // 3. VILLES / ZONES
+    // ==========================================
+
+    const [villes] = await pool.query(`
+      SELECT
+        COALESCE(ville,'Non définie') AS ville,
+        COUNT(*) AS total
+      FROM prospects
+      WHERE created_at >= NOW() - INTERVAL 7 DAY
+      GROUP BY ville
+      ORDER BY total DESC
+      LIMIT 10
+    `);
+
+
+    // ==========================================
+    // 4. PROSPECTS RÉCENTS
+    // ==========================================
+
+    const [prospects] = await pool.query(`
+      SELECT
+        id,
+        nom,
+        telephone,
+        ville,
+        service,
+        besoin,
+        statut,
+        etat_conversation,
+        created_at,
+        updated_at
+      FROM prospects
+      WHERE created_at >= NOW() - INTERVAL 7 DAY
+      ORDER BY created_at DESC
+      LIMIT 30
+    `);
+
+
+    // ==========================================
+    // 5. DONNÉES ENVOYÉES À GEMINI
+    // ==========================================
+
+    const donnees = {
+      periode: "7 derniers jours",
+
+      statistiques: {
+        total: Number(global.total || 0),
+        nouveaux: Number(global.nouveaux || 0),
+        en_cours: Number(global.en_cours || 0),
+        qualifies: Number(global.qualifies || 0),
+        devis: Number(global.devis || 0),
+        clients: Number(global.clients || 0),
+        perdus: Number(global.perdus || 0)
+      },
+
+      services: services.map(x => ({
+        service: x.service,
+        total: Number(x.total)
+      })),
+
+      villes: villes.map(x => ({
+        ville: x.ville,
+        total: Number(x.total)
+      })),
+
+      prospects: prospects.map(x => ({
+        nom: x.nom,
+        telephone: x.telephone,
+        ville: x.ville,
+        service: x.service,
+        besoin: x.besoin,
+        statut: x.statut,
+        conversation: x.etat_conversation,
+        date: x.created_at
+      }))
+    };
+
+
+    // ==========================================
+    // 6. PROMPT DU ROBOT COMMERCIAL
+    // ==========================================
+
+    const prompt = `
+Tu es le Robot IA commercial de VisionProtection & Informatique
+à Abidjan, Côte d'Ivoire.
+
+Ton rôle est d'aider le commercial à analyser les prospects
+et améliorer leur conversion.
+
+Analyse les données CRM ci-dessous.
+
+DONNÉES CRM :
+${JSON.stringify(donnees, null, 2)}
+
+Produis un rapport commercial court, clair et concret en français.
+
+Structure obligatoirement ta réponse ainsi :
+
+1. 📊 SITUATION COMMERCIALE
+Résume l'activité des 7 derniers jours.
+
+2. 🔐 SERVICES DEMANDÉS
+Indique les services qui ressortent le plus.
+
+3. 📍 ZONES INTÉRESSANTES
+Indique les villes ou zones qui ressortent.
+
+4. 🎯 PROSPECTS À TRAITER
+Indique quels types de prospects doivent être traités en priorité
+selon leur statut et leur situation.
+
+5. 📱 RELANCES CONSEILLÉES
+Propose jusqu'à 3 actions de relance concrètes.
+
+6. 💡 ACTIONS COMMERCIALES
+Donne jusqu'à 3 actions concrètes pour améliorer la conversion.
+
+Ne prétends jamais avoir contacté un prospect.
+Ne modifie aucun statut.
+Ne supprime aucune donnée.
+Ne réalise aucune action extérieure au CRM.
+Tu fournis uniquement une analyse et des recommandations.
+`;
+
+
+    // ==========================================
+    // 7. APPEL GEMINI
+    // ==========================================
+
+    const response = await gemini.models.generateContent({
+      model: "gemini-3.8-flash",
+      contents: prompt
+    });
+
+
+    const rapport = response.text || "Aucun rapport généré.";
+
+
+    // ==========================================
+    // 8. RÉPONSE AU CRM
+    // ==========================================
+
+    res.json({
+      success: true,
+
+      robot: "VisionProtection Robot IA",
+
+      periode: "7 derniers jours",
+
+      statistiques: donnees.statistiques,
+
+      services: donnees.services,
+
+      villes: donnees.villes,
+
+      rapport_robot: rapport,
+
+      generated_at: new Date().toISOString(),
+
+      database: "mysql",
+
+      model: "gemini-3.8-flash"
+    });
+
+
+  } catch (error) {
+
+    console.error(
+      "❌ ERREUR ROBOT IA :",
+      error.response?.data || error.message
+    );
+
+    res.status(500).json({
+      success: false,
+      message: "Erreur du Robot IA.",
+      error: error.message
+    });
+
+  }
+
+});
+
+// ================== FIN ROBOT IA COMMERCIAL ==================
 app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.3",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
 async function start(){await initDatabase();app.listen(PORT,"0.0.0.0",()=>console.log(`VisionProtection WhatsApp CRM v2.5.3 - port ${PORT} - DB ${dbReady?"MYSQL":"MEMORY"}`));}
 start().catch(e=>{console.error("❌ ERREUR DÉMARRAGE :",e.message);process.exit(1);});
