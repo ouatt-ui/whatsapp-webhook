@@ -263,7 +263,7 @@ async function loadProspect(phone){
 }
 const SERVICES={"1":"Vidéosurveillance","2":"Contrôle d'accès","3":"Alarme intrusion","4":"SSI / CMSI","5":"Motorisation de portail","6":"Domotique","7":"Réseau informatique","8":"Demande de devis","9":"Conseiller"};
 function normalizeForApi(phone){
-  let n=String(phone||"").replace(/[^\\d]/g,"");
+  let n=String(phone||"").replace(/[^\d]/g,"");
   if(n.startsWith("00")) n=n.slice(2);
   if(n.startsWith("225")) return n;
   if(n.startsWith("0")) return "225"+n.slice(1);
