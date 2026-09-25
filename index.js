@@ -2,7 +2,83 @@ const express=require("express");
 const axios=require("axios");
 const mysql=require("mysql2/promise");
 const {GoogleGenAI}=require("@google/genai");
+// ================== APPEL GEMINI ROBUSTE ==================
 
+async function callGeminiWithRetry(prompt) {
+
+  const models = [
+    "gemini-3.8-flash",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite"
+  ];
+
+  let lastError = null;
+
+  for (const model of models) {
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
+
+      try {
+
+        console.log(
+          `🤖 Gemini : ${model} | tentative ${attempt}`
+        );
+
+        const response = await gemini.models.generateContent({
+          model: model,
+          contents: prompt
+        });
+
+        console.log(
+          `✅ Gemini OK avec ${model}`
+        );
+
+        return {
+          text: response.text || "",
+          model: model
+        };
+
+      } catch (error) {
+
+        lastError = error;
+
+        const message = error.message || "";
+
+        console.error(
+          `❌ Gemini ${model} tentative ${attempt}:`,
+          message
+        );
+
+        const isTemporary =
+          message.includes("503") ||
+          message.includes("UNAVAILABLE") ||
+          message.includes("high demand") ||
+          message.includes("overloaded");
+
+        if (!isTemporary) {
+          throw error;
+        }
+
+        if (attempt < 2) {
+
+          const delay = attempt === 1 ? 3000 : 6000;
+
+          console.log(
+            `⏳ Attente ${delay / 1000}s avant nouvelle tentative...`
+          );
+
+          await new Promise(resolve =>
+            setTimeout(resolve, delay)
+          );
+        }
+      }
+    }
+  }
+
+  throw lastError;
+}
+
+// ================== FIN APPEL GEMINI ROBUSTE ==================
 const gemini=process.env.GEMINI_API_KEY
   ? new GoogleGenAI({apiKey:process.env.GEMINI_API_KEY})
   : null;
@@ -588,40 +664,37 @@ Tu fournis uniquement une analyse et des recommandations.
     // 7. APPEL GEMINI
     // ==========================================
 
-    const response = await gemini.models.generateContent({
-      model: "gemini-3.8-flash",
-      contents: prompt
-    });
+    const aiResult = await callGeminiWithRetry(prompt);
 
+const rapport = aiResult.text || "Aucun rapport généré.";
 
-    const rapport = response.text || "Aucun rapport généré.";
-
+const modelUtilise = aiResult.model;
 
     // ==========================================
     // 8. RÉPONSE AU CRM
     // ==========================================
 
-    res.json({
-      success: true,
+   res.json({
+  success: true,
 
-      robot: "VisionProtection Robot IA",
+  robot: "VisionProtection Robot IA",
 
-      periode: "7 derniers jours",
+  periode: "7 derniers jours",
 
-      statistiques: donnees.statistiques,
+  statistiques: donnees.statistiques,
 
-      services: donnees.services,
+  services: donnees.services,
 
-      villes: donnees.villes,
+  villes: donnees.villes,
 
-      rapport_robot: rapport,
+  rapport_robot: rapport,
 
-      generated_at: new Date().toISOString(),
+  generated_at: new Date().toISOString(),
 
-      database: "mysql",
+  database: "mysql",
 
-      model: "gemini-3.8-flash"
-    });
+  model: modelUtilise
+});
 
 
   } catch (error) {
