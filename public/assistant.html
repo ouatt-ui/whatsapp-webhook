@@ -140,6 +140,34 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 .relance-high{border-left:5px solid #b42318}
 .relance-medium{border-left:5px solid #d99b00}
 
+
+.ia-dashboard{border:1px solid #dbe4ef;border-radius:14px;background:#fff;overflow:hidden}
+.ia-dashboard-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:16px 18px;border-bottom:1px solid #e7edf4;background:#f8fbff}
+.ia-status-pill{display:inline-flex;align-items:center;gap:7px;padding:7px 11px;border-radius:20px;font-size:12px;font-weight:bold;background:#eef2f6;color:#475467}
+.ia-status-pill.ok{background:#e7f7ee;color:#087443}
+.ia-status-pill.fallback{background:#fff4db;color:#8a5a00}
+.ia-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:15px}
+.ia-kpi{border:1px solid #e4e9f0;border-radius:10px;padding:13px;background:#fff}
+.ia-kpi-label{font-size:12px;color:#667085}
+.ia-kpi-value{font-size:25px;font-weight:800;margin-top:5px}
+.ia-grid{display:grid;grid-template-columns:1.25fr .9fr .9fr;gap:12px;padding:0 15px 15px}
+.ia-box{border:1px solid #e4e9f0;border-radius:10px;padding:14px;background:#fff}
+.ia-box h3{font-size:15px;margin:0 0 10px}
+.ia-action{border:1px solid #e4e9f0;border-radius:10px;padding:12px;margin-top:9px;background:#fbfcfe}
+.ia-action-head{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.ia-action-title{font-weight:700;font-size:14px}
+.ia-priority{font-size:11px;font-weight:700;padding:4px 7px;border-radius:12px;background:#eef2f6}
+.ia-priority.high{background:#fde7e7;color:#b42318}
+.ia-priority.medium{background:#fff2cc;color:#8a5a00}
+.ia-action p{margin:7px 0;color:#667085;font-size:12px;line-height:1.45}
+.ia-action button{width:auto;padding:7px 10px;margin-top:3px}
+.ia-mini-list{display:grid;gap:7px}
+.ia-mini-row{display:flex;justify-content:space-between;gap:8px;font-size:13px;padding-bottom:7px;border-bottom:1px solid #edf1f5}
+.ia-mini-row:last-child{border-bottom:0;padding-bottom:0}
+.ia-report-meta{font-size:12px;color:#667085;margin-top:7px}
+@media(max-width:900px){.ia-kpis{grid-template-columns:repeat(2,1fr)}.ia-grid{grid-template-columns:1fr}}
+@media(max-width:550px){.ia-kpis{grid-template-columns:1fr 1fr}.ia-kpi-value{font-size:21px}}
+
 @media(max-width:900px){.layout{grid-template-columns:1fr}aside{display:none}.cards{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:550px){.cards{grid-template-columns:1fr}main{padding:14px}}
 </style>
@@ -147,7 +175,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 <body>
 <header>
 <div class="brand">🛡️ VisionProtection</div>
-<div class="badge">Assistant Commercial IA — V1.3</div>
+<div class="badge">Assistant Commercial IA — V1.4</div>
 </header>
 
 <div class="layout">
@@ -181,9 +209,46 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 </div>
 </section>
 
+<section class="panel" id="iaDashboardPanel">
+  <div class="ia-dashboard">
+    <div class="ia-dashboard-head">
+      <div>
+        <h2 style="margin:0">🎯 Tableau de bord commercial IA V1.4</h2>
+        <div id="iaDashboardMeta" class="ia-report-meta">Chargement du tableau de bord...</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <span id="iaStatusPill" class="ia-status-pill">⏳ Vérification IA</span>
+        <button class="secondary" style="width:auto;margin-top:0" onclick="loadDashboardV14()">↻ Actualiser</button>
+      </div>
+    </div>
+
+    <div class="ia-kpis">
+      <div class="ia-kpi"><div class="ia-kpi-label">Prospects CRM</div><div class="ia-kpi-value" id="iaKpiTotal">—</div></div>
+      <div class="ia-kpi"><div class="ia-kpi-label">À relancer</div><div class="ia-kpi-value" id="iaKpiRelances">—</div></div>
+      <div class="ia-kpi"><div class="ia-kpi-label">Devis en attente</div><div class="ia-kpi-value" id="iaKpiDevis">—</div></div>
+      <div class="ia-kpi"><div class="ia-kpi-label">Qualifiés</div><div class="ia-kpi-value" id="iaKpiQualifies">—</div></div>
+    </div>
+
+    <div class="ia-grid">
+      <div class="ia-box">
+        <h3>📌 Que dois-je faire aujourd'hui ?</h3>
+        <div id="iaActions">Chargement...</div>
+      </div>
+      <div class="ia-box">
+        <h3>🔐 Services — 7 jours</h3>
+        <div id="iaServices" class="ia-mini-list">Chargement...</div>
+      </div>
+      <div class="ia-box">
+        <h3>📍 Zones — 7 jours</h3>
+        <div id="iaVilles" class="ia-mini-list">Chargement...</div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <section class="panel" id="iaPanel">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
-    <h2 style="margin:0">🤖 Rapport commercial IA V1.3</h2>
+    <h2 style="margin:0">🤖 Rapport commercial IA V1.4</h2>
     <button class="secondary" style="width:auto;margin-top:0" onclick="lancerRapportIA()">↻ Actualiser</button>
   </div>
   <div id="iaStatus" style="margin-top:10px;color:#667085;font-size:13px;">Aucun rapport généré.</div>
@@ -524,6 +589,8 @@ async function loadData() {
           "</option>";
       });
     }
+
+    loadDashboardV14();
 
   } catch (e) {
     document.getElementById("prospects").innerHTML =
@@ -1331,6 +1398,76 @@ function appelerProspect() {
 }
 
  
+function formatDashboardNumber(value){
+  return Number(value || 0).toLocaleString("fr-FR");
+}
+
+function renderMiniList(containerId, items, labelKey){
+  const el=document.getElementById(containerId);
+  if(!el)return;
+  if(!items || !items.length){
+    el.innerHTML='<div style="color:#667085;font-size:13px">Aucune donnée.</div>';
+    return;
+  }
+  el.innerHTML=items.map(x=>
+    '<div class="ia-mini-row"><span>'+escapeHtml(x[labelKey] || "Non défini")+'</span><strong>'+formatDashboardNumber(x.total)+'</strong></div>'
+  ).join('');
+}
+
+function renderDashboardActions(actions){
+  const el=document.getElementById("iaActions");
+  if(!el)return;
+  if(!actions || !actions.length){
+    el.innerHTML='<div style="color:#667085;font-size:13px">Aucune action détectée.</div>';
+    return;
+  }
+  el.innerHTML=actions.map((a,index)=>{
+    const cls=a.priority==="HAUTE"?"high":a.priority==="MOYENNE"?"medium":"";
+    const firstId=(a.prospect_ids||[])[0];
+    const button=firstId
+      ? '<button class="secondary" onclick="ouvrirProspect('+Number(firstId)+')">Voir le premier prospect</button>'
+      : '';
+    return '<div class="ia-action">'
+      +'<div class="ia-action-head"><span class="ia-action-title">'+escapeHtml(a.title||"Action commerciale")+'</span>'
+      +'<span class="ia-priority '+cls+'">'+escapeHtml(a.priority||"NORMALE")+'</span></div>'
+      +'<p>'+escapeHtml(a.description||"")+'</p>'
+      +button
+      +'</div>';
+  }).join('');
+}
+
+async function loadDashboardV14(){
+  const pill=document.getElementById("iaStatusPill");
+  const meta=document.getElementById("iaDashboardMeta");
+  if(pill)pill.className="ia-status-pill";
+  if(pill)pill.textContent="⏳ Actualisation...";
+  try{
+    const data=await api("/robot/dashboard");
+    const g=data.gemini||{};
+    const available=g.available===true;
+    if(pill){
+      pill.className="ia-status-pill "+(available?"ok":"fallback");
+      pill.textContent=available?"🟢 Gemini actif":"🟠 Mode secours disponible";
+    }
+    if(meta){
+      const when=data.generated_at?formaterDate(data.generated_at):"—";
+      meta.textContent="Dernière actualisation : "+when+" · "+(available?(g.model||"gemini-3.8-flash"):"CRM autonome") ;
+    }
+    const s=data.seven_days||{};
+    document.getElementById("iaKpiTotal").textContent=formatDashboardNumber(data.crm?.total);
+    document.getElementById("iaKpiRelances").textContent=formatDashboardNumber((data.relances||[]).length);
+    document.getElementById("iaKpiDevis").textContent=formatDashboardNumber((data.devis||[]).length);
+    document.getElementById("iaKpiQualifies").textContent=formatDashboardNumber((data.qualifies||[]).length);
+    renderDashboardActions(data.actions||[]);
+    renderMiniList("iaServices",data.services||[],"service");
+    renderMiniList("iaVilles",data.villes||[],"ville");
+  }catch(error){
+    if(pill){pill.className="ia-status-pill fallback";pill.textContent="⚠️ Tableau indisponible";}
+    if(meta)meta.textContent="Erreur : "+error.message;
+    document.getElementById("iaActions").innerHTML='<div style="color:#b42318;font-size:13px">Impossible de charger le tableau de bord.</div>';
+  }
+}
+
 async function lancerRapportIA() {
   const status = document.getElementById("iaStatus");
   const report = document.getElementById("iaReport");
@@ -1384,6 +1521,7 @@ function ask(question){
 
 function escapeHtml(s){return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;")}
 loadData();
+loadDashboardV14();
 </script>
 </body>
 </html>
