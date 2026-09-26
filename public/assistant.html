@@ -147,7 +147,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 <body>
 <header>
 <div class="brand">🛡️ VisionProtection</div>
-<div class="badge">Assistant Commercial IA — V1.2.2</div>
+<div class="badge">Assistant Commercial IA — V1.3</div>
 </header>
 
 <div class="layout">
@@ -159,6 +159,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 <button class="secondary" onclick="ask('Donne-moi les statistiques du CRM.')">Voir les statistiques</button>
 <button class="secondary" onclick="detecterRelances()">Préparer les relances</button>
 <button class="secondary" onclick="detecterRelances()">🔎 Détecter les prospects à relancer</button>
+    <button class="secondary" onclick="lancerRapportIA()">🤖 Générer le rapport IA</button>
 </aside>
 
 <main>
@@ -180,6 +181,14 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 </div>
 </section>
 
+<section class="panel" id="iaPanel">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+    <h2 style="margin:0">🤖 Rapport commercial IA V1.3</h2>
+    <button class="secondary" style="width:auto;margin-top:0" onclick="lancerRapportIA()">↻ Actualiser</button>
+  </div>
+  <div id="iaStatus" style="margin-top:10px;color:#667085;font-size:13px;">Aucun rapport généré.</div>
+  <div id="iaReport" style="margin-top:12px;background:#f7f9fc;border:1px solid #e2e7ef;border-radius:10px;padding:15px;white-space:pre-line;line-height:1.5;">Cliquez sur « Générer le rapport IA ». Si Gemini est temporairement indisponible, le système utilisera automatiquement le mode secours CRM.</div>
+</section>
 
 <section id="relancePanel" class="relance-panel">
   <div class="relance-head">
@@ -1322,6 +1331,36 @@ function appelerProspect() {
 }
 
  
+async function lancerRapportIA() {
+  const status = document.getElementById("iaStatus");
+  const report = document.getElementById("iaReport");
+
+  status.textContent = "⏳ Analyse du CRM en cours...";
+  report.textContent = "Génération du rapport...";
+
+  try {
+    const response = await fetch("/robot/run");
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || "Impossible de générer le rapport.");
+    }
+
+    if (data.fallback) {
+      status.innerHTML = "⚠️ <strong>Mode secours CRM</strong> — Gemini temporairement indisponible. Les données viennent directement du CRM.";
+    } else {
+      status.innerHTML = "✅ <strong>Gemini actif</strong> — modèle : " + escapeHtml(data.model || "gemini-3.8-flash");
+    }
+
+    report.textContent = data.rapport_robot || "Aucun rapport généré.";
+
+  } catch (error) {
+    console.error("Erreur rapport IA :", error);
+    status.textContent = "❌ Erreur lors de la génération du rapport.";
+    report.textContent = error.message;
+  }
+}
+
 function addMessage(text,type){
  const d=document.createElement("div");d.className="msg "+type;d.textContent=text;
  document.getElementById("chat").appendChild(d);
@@ -1339,7 +1378,7 @@ function ask(question){
   answer=e.length?"Services présents :\n"+e.map(x=>"• "+x[0]+" : "+x[1]).join("\n"):"Aucun service enregistré.";
  }else if(q.includes("prospect")||q.includes("relance"))
   answer=prospects.length?"Il y a actuellement "+prospects.length+" prospect(s) dans le CRM. Consultez la liste ci-dessous pour préparer les relances.":"Aucun prospect disponible.";
- else answer="Je peux consulter les prospects, les statistiques et les services enregistrés. La prochaine version pourra intégrer l’analyse commerciale IA et la génération de messages de relance.";
+ else answer="Je peux consulter les prospects, les statistiques et les services enregistrés. Pour une analyse commerciale complète, utilisez le bouton « Générer le rapport IA ». Gemini sera utilisé s'il est disponible ; sinon le mode secours CRM produira automatiquement un rapport à partir des données enregistrées.";
  setTimeout(()=>addMessage(answer,"assistant"),250);
 }
 
