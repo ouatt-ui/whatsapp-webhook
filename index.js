@@ -869,6 +869,186 @@ app.get("/robot/status", (req, res) => {
 });
 
 
+// ================== TABLEAU DE BORD IA V1.4 ==================
+
+app.get("/robot/dashboard", async (req, res) => {
+  try {
+    if (!dbReady || !pool) {
+      return res.status(503).json({
+        success: false,
+        message: "Base MySQL non disponible."
+      });
+    }
+
+    const [[global]] = await pool.query(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(etat_conversation='TERMINE') AS done,
+        SUM(etat_conversation<>'TERMINE' OR etat_conversation IS NULL) AS active
+      FROM prospects
+    `);
+
+    const [[seven]] = await pool.query(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(statut='Nouveau') AS nouveaux,
+        SUM(statut='En cours') AS en_cours,
+        SUM(statut='Qualifié') AS qualifies,
+        SUM(statut='Devis') AS devis,
+        SUM(statut='Client') AS clients,
+        SUM(statut='Perdu') AS perdus
+      FROM prospects
+      WHERE created_at >= NOW() - INTERVAL 7 DAY
+    `);
+
+    const [relances] = await pool.query(`
+      SELECT
+        p.id,
+        p.nom,
+        p.telephone,
+        p.entreprise,
+        p.ville,
+        p.service,
+        p.besoin,
+        p.statut,
+        p.etat_conversation,
+        COALESCE((
+          SELECT MAX(m.created_at)
+          FROM messages m
+          WHERE m.prospect_id = p.id
+        ), p.updated_at, p.created_at) AS derniere_activite
+      FROM prospects p
+      WHERE p.statut IN ('Nouveau','En cours','Qualifié','Devis')
+        AND COALESCE((
+          SELECT MAX(m.created_at)
+          FROM messages m
+          WHERE m.prospect_id = p.id
+        ), p.updated_at, p.created_at) <= NOW() - INTERVAL 3 DAY
+      ORDER BY derniere_activite ASC
+      LIMIT 20
+    `);
+
+    const [devis] = await pool.query(`
+      SELECT id, nom, telephone, entreprise, ville, service, besoin, statut, updated_at
+      FROM prospects
+      WHERE statut='Devis'
+      ORDER BY updated_at ASC
+      LIMIT 10
+    `);
+
+    const [qualifies] = await pool.query(`
+      SELECT id, nom, telephone, entreprise, ville, service, besoin, statut, updated_at
+      FROM prospects
+      WHERE statut='Qualifié'
+      ORDER BY updated_at ASC
+      LIMIT 10
+    `);
+
+    const [services] = await pool.query(`
+      SELECT COALESCE(service,'Non défini') AS service, COUNT(*) AS total
+      FROM prospects
+      WHERE created_at >= NOW() - INTERVAL 7 DAY
+      GROUP BY service
+      ORDER BY total DESC
+      LIMIT 8
+    `);
+
+    const [villes] = await pool.query(`
+      SELECT COALESCE(ville,'Non définie') AS ville, COUNT(*) AS total
+      FROM prospects
+      WHERE created_at >= NOW() - INTERVAL 7 DAY
+      GROUP BY ville
+      ORDER BY total DESC
+      LIMIT 8
+    `);
+
+    const actions = [];
+
+    if (devis.length) {
+      actions.push({
+        type: "DEVIS",
+        priority: "HAUTE",
+        title: `${devis.length} devis à suivre`,
+        description: "Vérifier les devis en attente et contacter les prospects concernés.",
+        count: devis.length,
+        prospect_ids: devis.map(x => x.id)
+      });
+    }
+
+    if (relances.length) {
+      actions.push({
+        type: "RELANCE",
+        priority: "HAUTE",
+        title: `${relances.length} prospect(s) à relancer`,
+        description: "Préparer une relance personnalisée selon le service et le besoin.",
+        count: relances.length,
+        prospect_ids: relances.map(x => x.id)
+      });
+    }
+
+    if (qualifies.length) {
+      actions.push({
+        type: "QUALIFICATION",
+        priority: "MOYENNE",
+        title: `${qualifies.length} prospect(s) qualifié(s) à faire avancer`,
+        description: "Vérifier le besoin, préparer la proposition ou planifier une visite technique.",
+        count: qualifies.length,
+        prospect_ids: qualifies.map(x => x.id)
+      });
+    }
+
+    if (!actions.length) {
+      actions.push({
+        type: "SUIVI",
+        priority: "NORMALE",
+        title: "Aucune action urgente détectée",
+        description: "Actualiser les données CRM et continuer le suivi des nouveaux prospects.",
+        count: 0,
+        prospect_ids: []
+      });
+    }
+
+    res.json({
+      success: true,
+      generated_at: new Date().toISOString(),
+      database: "mysql",
+      gemini: {
+        configured: Boolean(process.env.GEMINI_API_KEY),
+        available: geminiHealth.available,
+        last_check: geminiHealth.lastCheck,
+        reason: geminiHealth.reason,
+        model: geminiHealth.model,
+        fallback_available: true
+      },
+      crm: {
+        total: Number(global.total || 0),
+        active: Number(global.active || 0),
+        done: Number(global.done || 0)
+      },
+      seven_days: {
+        total: Number(seven.total || 0),
+        nouveaux: Number(seven.nouveaux || 0),
+        en_cours: Number(seven.en_cours || 0),
+        qualifies: Number(seven.qualifies || 0),
+        devis: Number(seven.devis || 0),
+        clients: Number(seven.clients || 0),
+        perdus: Number(seven.perdus || 0)
+      },
+      actions,
+      relances,
+      devis,
+      qualifies,
+      services: services.map(x => ({service:x.service,total:Number(x.total)})),
+      villes: villes.map(x => ({ville:x.ville,total:Number(x.total)}))
+    });
+  } catch (error) {
+    console.error("❌ ERREUR TABLEAU DE BORD IA V1.4 :", error.message);
+    res.status(500).json({success:false,message:error.message});
+  }
+});
+
+// ================== FIN TABLEAU DE BORD IA V1.4 ==================
+
 // ================== RAPPORT ROBOT IA ==================
 
 app.get("/robot/run", async (req, res) => {
@@ -1145,6 +1325,6 @@ try {
 });
 
 // ================== FIN ROBOT IA COMMERCIAL ==================
-app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.4-v1.3-resilient",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
+app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.4-v1.4",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
 async function start(){await initDatabase();app.listen(PORT,"0.0.0.0",()=>console.log(`VisionProtection WhatsApp CRM v2.5.4 V1.3 RESILIENT - port ${PORT} - DB ${dbReady?"MYSQL":"MEMORY"}`));}
 start().catch(e=>{console.error("❌ ERREUR DÉMARRAGE :",e.message);process.exit(1);});
