@@ -2,78 +2,178 @@ const express=require("express");
 const axios=require("axios");
 const mysql=require("mysql2/promise");
 const {GoogleGenAI}=require("@google/genai");
-// ================== APPEL GEMINI ROBUSTE ==================
+// ================== APPEL GEMINI ROBUSTE V1.3 ==================
 
-async function callGemini(prompt) {
+let geminiHealth = {
+  available: null,
+  lastCheck: null,
+  reason: null,
+  model: "gemini-3.8-flash"
+};
+
+function classifyGeminiError(error) {
+  const message = String(error?.message || "");
+  const code = String(error?.code || error?.status || error?.response?.status || "");
+  const raw = (message + " " + code).toUpperCase();
+
+  if (
+    raw.includes("GENERATEREQUESTSPERDAY") ||
+    raw.includes("QUOTAVALUE") ||
+    raw.includes("DAILY QUOTA") ||
+    raw.includes("RESOURCE_EXHAUSTED") ||
+    raw.includes("429")
+  ) return "QUOTA";
+
+  if (
+    raw.includes("503") ||
+    raw.includes("UNAVAILABLE") ||
+    raw.includes("HIGH DEMAND") ||
+    raw.includes("OVERLOADED")
+  ) return "UNAVAILABLE";
+
+  if (raw.includes("401") || raw.includes("403") || raw.includes("API KEY") || raw.includes("PERMISSION")) {
+    return "AUTH";
+  }
+
+  return "OTHER";
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function callGemini(prompt, options = {}) {
+  const max503Retries = Number.isInteger(options.max503Retries) ? options.max503Retries : 1;
 
   if (!gemini) {
+    geminiHealth = {
+      ...geminiHealth,
+      available: false,
+      lastCheck: new Date().toISOString(),
+      reason: "CLIENT_NON_INITIALISE"
+    };
     throw new Error("Client Gemini non initialisé.");
   }
 
-  try {
+  for (let attempt = 0; attempt <= max503Retries; attempt++) {
+    try {
+      console.log(`🤖 Appel Gemini V1.3 (tentative ${attempt + 1}/${max503Retries + 1})...`);
 
-    console.log("🤖 Appel Gemini...");
+      const response = await gemini.models.generateContent({
+        model: "gemini-3.8-flash",
+        contents: prompt
+      });
 
-    const response = await gemini.models.generateContent({
-      model: "gemini-3.8-flash",
-      contents: prompt
-    });
+      geminiHealth = {
+        ...geminiHealth,
+        available: true,
+        lastCheck: new Date().toISOString(),
+        reason: null
+      };
 
-    console.log("✅ Gemini a répondu.");
+      console.log("✅ Gemini a répondu.");
 
-    return {
-      text: response.text || "",
-      model: "gemini-3.8-flash"
-    };
+      return {
+        text: response.text || "",
+        model: "gemini-3.8-flash",
+        ai_available: true,
+        fallback: false
+      };
 
-  } catch (error) {
+    } catch (error) {
+      const type = classifyGeminiError(error);
+      const message = error?.message || String(error);
 
-    const message = error.message || "";
+      console.error("❌ ERREUR GEMINI :", message);
 
-    console.error(
-      "❌ ERREUR GEMINI :",
-      message
-    );
+      geminiHealth = {
+        ...geminiHealth,
+        available: false,
+        lastCheck: new Date().toISOString(),
+        reason: type
+      };
 
-    // =========================
-    // QUOTA QUOTIDIEN ATTEINT
-    // =========================
+      if (type === "QUOTA") {
+        throw new Error(
+          "QUOTA GEMINI ATTEINT. Le Robot IA repassera automatiquement en mode secours jusqu'à la réinitialisation du quota."
+        );
+      }
 
-    if (
-      message.includes("GenerateRequestsPerDay") ||
-      message.includes("quotaValue") ||
-      message.includes("daily quota") ||
-      message.includes("RESOURCE_EXHAUSTED")
-    ) {
+      if (type === "UNAVAILABLE" && attempt < max503Retries) {
+        console.log("⏳ Gemini temporairement indisponible. Nouvelle tentative dans 3 secondes...");
+        await sleep(3000);
+        continue;
+      }
 
-      throw new Error(
-        "QUOTA GEMINI ATTEINT. " +
-        "Le Robot IA pourra être réutilisé après la réinitialisation du quota."
-      );
+      if (type === "UNAVAILABLE") {
+        throw new Error(
+          "GEMINI TEMPORAIREMENT INDISPONIBLE. Le Robot IA passe en mode secours CRM."
+        );
+      }
+
+      throw error;
     }
-
-    // =========================
-    // GEMINI TEMPORAIREMENT INDISPONIBLE
-    // =========================
-
-    if (
-      message.includes("503") ||
-      message.includes("UNAVAILABLE") ||
-      message.includes("high demand") ||
-      message.includes("overloaded")
-    ) {
-
-      throw new Error(
-        "GEMINI TEMPORAIREMENT INDISPONIBLE. " +
-        "Réessayez dans quelques minutes."
-      );
-    }
-
-    throw error;
   }
 }
 
-// ================== FIN APPEL GEMINI ROBUSTE ==================
+function genererRapportFallback(donnees, cause = "Gemini indisponible") {
+  const s = donnees.statistiques || {};
+  const services = Array.isArray(donnees.services) ? donnees.services : [];
+  const villes = Array.isArray(donnees.villes) ? donnees.villes : [];
+  const prospects = Array.isArray(donnees.prospects) ? donnees.prospects : [];
+  const relances = Array.isArray(donnees.relances) ? donnees.relances : [];
+
+  const topServices = services.slice(0, 5).map(x => `• ${x.service} : ${x.total}`).join("\n") || "• Aucun service enregistré.";
+  const topVilles = villes.slice(0, 5).map(x => `• ${x.ville} : ${x.total}`).join("\n") || "• Aucune zone enregistrée.";
+
+  const candidats = prospects.filter(p => ["Devis", "Qualifié", "En cours", "Nouveau"].includes(p.statut)).slice(0, 5);
+  const traitement = candidats.map(p => `• ${p.nom || "Sans nom"} — ${p.service || "Service non défini"} — statut : ${p.statut || "Nouveau"}`).join("\n") || "• Aucun prospect actif à signaler.";
+
+  const relanceTexte = relances.length
+    ? `• ${relances.length} prospect(s) sans activité depuis au moins 3 jours sont actuellement détectés.`
+    : "• Aucun prospect à relancer n'est actuellement détecté par le moteur CRM.";
+
+  return `RAPPORT COMMERCIAL — MODE SECOURS CRM
+
+⚠️ Gemini n'est pas disponible actuellement.
+Cause technique : ${cause}
+Les données ci-dessous proviennent directement du CRM et aucune action extérieure n'a été effectuée.
+
+1. 📊 SITUATION COMMERCIALE
+• Prospects sur 7 jours : ${s.total || 0}
+• Nouveaux : ${s.nouveaux || 0}
+• En cours : ${s.en_cours || 0}
+• Qualifiés : ${s.qualifies || 0}
+• Devis : ${s.devis || 0}
+• Clients : ${s.clients || 0}
+• Perdus : ${s.perdus || 0}
+
+2. 🔐 SERVICES DEMANDÉS
+${topServices}
+
+3. 📍 ZONES INTÉRESSANTES
+${topVilles}
+
+4. 🎯 PROSPECTS À TRAITER
+${traitement}
+
+5. 📱 RELANCES CONSEILLÉES
+${relanceTexte}
+• Vérifier la fiche du prospect avant tout envoi.
+• Adapter le message au service et au besoin enregistrés.
+• Enregistrer les informations commerciales importantes dans les notes CRM.
+
+6. 💡 ACTIONS COMMERCIALES
+• Actualiser régulièrement les statuts CRM.
+• Préparer les devis pour les prospects au statut « Devis ».
+• Utiliser les notes commerciales pour conserver le contexte des échanges.
+
+MODE : CRM-FALLBACK
+Gemini sera réutilisé automatiquement lors d'une prochaine analyse lorsque le service redeviendra disponible.`;
+}
+
+// ================== FIN APPEL GEMINI ROBUSTE V1.3 ==================
+
 const gemini=process.env.GEMINI_API_KEY
   ? new GoogleGenAI({apiKey:process.env.GEMINI_API_KEY})
   : null;
@@ -708,43 +808,64 @@ app.post("/robot/relance-whatsapp", async (req, res) => {
 
 app.get("/robot/test", async (req, res) => {
   try {
-
     if (!process.env.GEMINI_API_KEY) {
+      geminiHealth = { ...geminiHealth, available:false, lastCheck:new Date().toISOString(), reason:"API_KEY_ABSENTE" };
       return res.status(500).json({
         success: false,
+        ai_available: false,
+        mode: "fallback",
         message: "GEMINI_API_KEY absente dans Render."
       });
     }
 
     if (!gemini) {
+      geminiHealth = { ...geminiHealth, available:false, lastCheck:new Date().toISOString(), reason:"CLIENT_NON_INITIALISE" };
       return res.status(500).json({
         success: false,
+        ai_available: false,
+        mode: "fallback",
         message: "Client Gemini non initialisé."
       });
     }
 
-    const response = await gemini.models.generateContent({
-      model: "gemini-3.8-flash",
-      contents: "Réponds uniquement : ROBOT OUATT GEMINI OK"
-    });
+    const result = await callGemini("Réponds uniquement : ROBOT OUATT GEMINI OK", { max503Retries: 1 });
 
     res.json({
       success: true,
-      message: response.text
+      ai_available: true,
+      mode: "gemini",
+      message: result.text,
+      model: result.model,
+      checked_at: geminiHealth.lastCheck
     });
 
   } catch (error) {
+    console.error("❌ ERREUR TEST GEMINI :", error.message);
+    const status = geminiHealth.reason === "QUOTA" ? 429 : geminiHealth.reason === "UNAVAILABLE" ? 503 : 500;
 
-    console.error(
-      "❌ ERREUR TEST GEMINI :",
-      error.message
-    );
-
-    res.status(500).json({
+    res.status(status).json({
       success: false,
-      error: error.message
+      ai_available: false,
+      mode: "fallback",
+      reason: geminiHealth.reason,
+      message: error.message,
+      checked_at: geminiHealth.lastCheck
     });
   }
+});
+
+app.get("/robot/status", (req, res) => {
+  res.json({
+    success: true,
+    gemini_configured: Boolean(process.env.GEMINI_API_KEY),
+    client_initialized: Boolean(gemini),
+    model: geminiHealth.model,
+    ai_available: geminiHealth.available,
+    last_check: geminiHealth.lastCheck,
+    reason: geminiHealth.reason,
+    fallback_available: true,
+    generated_at: new Date().toISOString()
+  });
 });
 
 
@@ -761,13 +882,7 @@ app.get("/robot/run", async (req, res) => {
       });
     }
 
-    if (!gemini) {
-      return res.status(500).json({
-        success: false,
-        message: "Client Gemini non initialisé."
-      });
-    }
-
+    // Le rapport peut fonctionner sans Gemini grâce au mode secours CRM.
 
     // ==========================================
     // 1. STATISTIQUES COMMERCIALES 7 JOURS
@@ -841,6 +956,25 @@ app.get("/robot/run", async (req, res) => {
       LIMIT 30
     `);
 
+    const [relances] = await pool.query(`
+      SELECT
+        p.id, p.nom, p.telephone, p.service, p.statut,
+        COALESCE((
+          SELECT MAX(m.created_at)
+          FROM messages m
+          WHERE m.prospect_id = p.id
+        ), p.updated_at, p.created_at) AS derniere_activite
+      FROM prospects p
+      WHERE p.statut IN ('Nouveau','En cours','Qualifié','Devis')
+        AND COALESCE((
+          SELECT MAX(m.created_at)
+          FROM messages m
+          WHERE m.prospect_id = p.id
+        ), p.updated_at, p.created_at) <= NOW() - INTERVAL 3 DAY
+      ORDER BY derniere_activite ASC
+      LIMIT 100
+    `);
+
 
     // ==========================================
     // 5. DONNÉES ENVOYÉES À GEMINI
@@ -867,6 +1001,15 @@ app.get("/robot/run", async (req, res) => {
       villes: villes.map(x => ({
         ville: x.ville,
         total: Number(x.total)
+      })),
+
+      relances: relances.map(x => ({
+        id: x.id,
+        nom: x.nom || "Sans nom",
+        telephone: x.telephone,
+        service: x.service || "Non défini",
+        statut: x.statut,
+        derniere_activite: x.derniere_activite
       })),
 
       prospects: prospects.map(x => ({
@@ -933,11 +1076,26 @@ Tu fournis uniquement une analyse et des recommandations.
     // 7. APPEL GEMINI
     // ==========================================
 
-const aiResult = await callGemini(prompt);
+let aiResult = null;
+let rapport = "";
+let modelUtilise = "";
+let aiAvailable = false;
+let fallback = false;
+let fallbackReason = null;
 
-const rapport = aiResult.text || "Aucun rapport généré.";
-
-const modelUtilise = aiResult.model;
+try {
+  aiResult = await callGemini(prompt, { max503Retries: 1 });
+  rapport = aiResult.text || "Aucun rapport généré.";
+  modelUtilise = aiResult.model;
+  aiAvailable = true;
+} catch (aiError) {
+  fallback = true;
+  fallbackReason = aiError.message;
+  rapport = genererRapportFallback(donnees, aiError.message);
+  modelUtilise = "CRM-FALLBACK";
+  aiAvailable = false;
+  console.warn("⚠️ MODE SECOURS CRM :", aiError.message);
+}
     // ==========================================
     // 8. RÉPONSE AU CRM
     // ==========================================
@@ -961,7 +1119,13 @@ const modelUtilise = aiResult.model;
 
   database: "mysql",
 
-  model: modelUtilise
+  model: modelUtilise,
+
+  ai_available: aiAvailable,
+
+  fallback: fallback,
+
+  fallback_reason: fallbackReason
 });
 
 
@@ -972,7 +1136,7 @@ const modelUtilise = aiResult.model;
     error.message
   );
 
-  res.status(429).json({
+  res.status(500).json({
     success: false,
     message: error.message,
     robot: "VisionProtection Robot IA"
@@ -981,6 +1145,6 @@ const modelUtilise = aiResult.model;
 });
 
 // ================== FIN ROBOT IA COMMERCIAL ==================
-app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.4",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
-async function start(){await initDatabase();app.listen(PORT,"0.0.0.0",()=>console.log(`VisionProtection WhatsApp CRM v2.5.4 - port ${PORT} - DB ${dbReady?"MYSQL":"MEMORY"}`));}
+app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.4-v1.3-resilient",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
+async function start(){await initDatabase();app.listen(PORT,"0.0.0.0",()=>console.log(`VisionProtection WhatsApp CRM v2.5.4 V1.3 RESILIENT - port ${PORT} - DB ${dbReady?"MYSQL":"MEMORY"}`));}
 start().catch(e=>{console.error("❌ ERREUR DÉMARRAGE :",e.message);process.exit(1);});
