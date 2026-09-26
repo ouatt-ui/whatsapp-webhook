@@ -857,6 +857,146 @@ Efficacité et professionnalisme
 
 // ================== FIN RELANCE PERSONNALISEE GEMINI V1.5 ==================
 
+// ================== HISTORIQUE INTELLIGENT V1.6 ==================
+
+function genererAnalyseFallbackV16(prospect, historique = [], notes = []) {
+  const entrants = historique.filter(x => String(x.direction || '').toLowerCase() === 'in').length;
+  const sortants = historique.filter(x => String(x.direction || '').toLowerCase() === 'out').length;
+  const dernier = historique.length ? historique[historique.length - 1] : null;
+  const dernierType = dernier ? (String(dernier.direction).toLowerCase() === 'in' ? 'prospect' : 'commercial') : 'aucun';
+  let recommandation = 'Préparer une relance courte et personnalisée.';
+  if (dernierType === 'prospect') recommandation = 'Le dernier message vient du prospect : répondre d’abord à sa dernière demande avant toute relance.';
+  if (prospect.statut === 'Qualifié') recommandation = 'Le prospect est qualifié : proposer clairement la prochaine étape, par exemple visite technique ou devis.';
+  if (prospect.statut === 'Devis') recommandation = 'Le prospect est au stade devis : vérifier s’il a reçu le devis et identifier les éventuels blocages.';
+  if (!historique.length) recommandation = 'Aucun historique de message disponible : utiliser uniquement les informations CRM connues.';
+  return [
+    'ANALYSE CRM DE SECOURS',
+    '',
+    `• Statut : ${prospect.statut || 'Non défini'}`,
+    `• Messages analysés : ${historique.length} (${entrants} entrant(s), ${sortants} sortant(s))`,
+    `• Notes commerciales : ${notes.length}`,
+    `• Dernière activité : ${prospect.derniere_activite || 'Non connue'}`,
+    '',
+    `RECOMMANDATION : ${recommandation}`,
+    '',
+    'Cette analyse est générée sans IA à partir des données actuellement enregistrées dans le CRM.'
+  ].join('\n');
+}
+
+app.post('/robot/analyser-historique', async (req, res) => {
+  try {
+    if (!dbReady || !pool) return res.status(503).json({ success:false, message:'Base MySQL non disponible.' });
+    const phone = String(req.body?.phone || '').trim();
+    if (!phone) return res.status(400).json({ success:false, message:'Numéro du prospect obligatoire.' });
+
+    const phoneApi = normalizeForApi(phone);
+    const [rows] = await pool.query(
+      `SELECT id, whatsapp_id, telephone, nom, ville, service, besoin, statut, etat_conversation, created_at, updated_at
+       FROM prospects WHERE whatsapp_id=? OR telephone=? OR whatsapp_id=? OR telephone=? LIMIT 1`,
+      [phone, phone, phoneApi, phoneApi]
+    );
+    if (!rows.length) return res.status(404).json({ success:false, message:'Prospect introuvable.' });
+    const prospect = rows[0];
+
+    const [messages] = await pool.query(
+      `SELECT direction, message, message_type, created_at
+       FROM messages WHERE prospect_id=? ORDER BY created_at DESC LIMIT 30`,
+      [prospect.id]
+    );
+    const [notes] = await pool.query(
+      `SELECT note, auteur, created_at FROM notes_commerciales
+       WHERE prospect_id=? ORDER BY created_at DESC LIMIT 12`,
+      [prospect.id]
+    );
+
+    const historique = messages.reverse().map(m => ({
+      direction: m.direction,
+      message: String(m.message || '').slice(0, 1600),
+      type: m.message_type || 'text',
+      date: m.created_at
+    }));
+    const notesCommerciales = notes.map(n => ({
+      note: String(n.note || '').slice(0, 1000),
+      auteur: n.auteur,
+      date: n.created_at
+    }));
+
+    const donnees = {
+      prospect: {
+        nom: prospect.nom || 'Sans nom',
+        telephone: prospect.telephone,
+        ville: prospect.ville || 'Non définie',
+        service: prospect.service || 'Non défini',
+        besoin: prospect.besoin || '',
+        statut: prospect.statut,
+        etat_conversation: prospect.etat_conversation,
+        derniere_activite: prospect.updated_at || prospect.created_at
+      },
+      historique,
+      notes: notesCommerciales
+    };
+
+    const prompt = `
+Tu es l'assistant commercial de VisionProtection & Informatique à Abidjan.
+Analyse uniquement l'historique réel et les informations CRM fournis ci-dessous.
+
+DONNEES :
+${JSON.stringify(donnees, null, 2)}
+
+Réponds en français avec exactement ces rubriques :
+1. 🧠 COMPRÉHENSION DU BESOIN
+2. 💬 DERNIERS ÉCHANGES
+3. 🚧 POINTS À SURVEILLER
+4. 🎯 PROCHAINE ACTION CONSEILLÉE
+5. ✍️ ANGLE DE RELANCE
+
+Règles :
+- Ne prétends jamais qu'une action a été réalisée.
+- Ne fabrique aucune information absente de l'historique.
+- Distingue clairement ce qui est certain de ce qui est une recommandation.
+- N'invente ni prix, ni délai, ni disponibilité.
+- Ne modifie aucun statut et ne déclenche aucun envoi.
+- Reste concret et court.
+`;
+
+    let analyse = '';
+    let model = 'CRM-FALLBACK';
+    let fallback = false;
+    let fallbackReason = null;
+    try {
+      const result = await callGemini(prompt, { max503Retries: 1 });
+      analyse = String(result.text || '').trim();
+      if (!analyse) throw new Error('Gemini n\'a généré aucune analyse.');
+      model = result.model || 'gemini-3.8-flash';
+    } catch (aiError) {
+      fallback = true;
+      fallbackReason = aiError.message;
+      analyse = genererAnalyseFallbackV16(prospect, historique, notesCommerciales);
+    }
+
+    res.json({
+      success:true,
+      prospect:{ id:prospect.id, nom:prospect.nom, telephone:prospect.telephone, service:prospect.service, besoin:prospect.besoin, statut:prospect.statut },
+      historique,
+      notes:notesCommerciales,
+      history_count:historique.length,
+      notes_count:notesCommerciales.length,
+      analyse,
+      model,
+      ai_available:!fallback,
+      fallback,
+      fallback_reason:fallbackReason,
+      generated_at:new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ ERREUR ANALYSE HISTORIQUE V1.6 :', error.response?.data || error.message);
+    res.status(500).json({ success:false, message:error.message });
+  }
+});
+
+// ================== FIN HISTORIQUE INTELLIGENT V1.6 ==================
+
+
 // ================== ENVOI RELANCE WHATSAPP V1.3 ==================
 
 app.post("/robot/relance-whatsapp", async (req, res) => {
@@ -1489,6 +1629,6 @@ try {
 });
 
 // ================== FIN ROBOT IA COMMERCIAL ==================
-app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.4-v1.5",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
+app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.4-v1.6",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
 async function start(){await initDatabase();app.listen(PORT,"0.0.0.0",()=>console.log(`VisionProtection WhatsApp CRM v2.5.4 V1.5 RESILIENT - port ${PORT} - DB ${dbReady?"MYSQL":"MEMORY"}`));}
 start().catch(e=>{console.error("❌ ERREUR DÉMARRAGE :",e.message);process.exit(1);});
