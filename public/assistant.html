@@ -406,7 +406,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
       border-radius:10px;
     ">
       <div style="font-size:14px;font-weight:bold;margin-bottom:10px;">
-        📱 Message de relance V1.2.2
+        🤖 Message de relance personnalisée V1.5
       </div>
       <textarea
         id="messageRelance"
@@ -427,6 +427,12 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
         <button
           type="button"
+          onclick="genererRelanceIA()"
+          style="background:#7c3aed;color:white;">
+          🤖 Générer avec Gemini
+        </button>
+        <button
+          type="button"
           onclick="copierMessageRelance()"
           style="background:#0b3d91;color:white;">
           📋 Copier le message
@@ -444,8 +450,8 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
           🚀 Envoyer via WhatsApp Cloud API
         </button>
       </div>
-      <div style="margin-top:8px;color:#667085;font-size:12px;">
-        Le message est uniquement préparé. Aucun envoi automatique n'est effectué.
+      <div id="statutRelanceIA" style="margin-top:8px;color:#667085;font-size:12px;">
+        Gemini prépare le message uniquement à votre demande. Aucun envoi automatique n'est effectué.
       </div>
     </div>
 
@@ -804,6 +810,53 @@ async function detecterRelances() {
       '<p style="color:#b42318">❌ Impossible de charger les prospects à relancer : ' +
       escapeHtml(error.message) +
       '</p>';
+  }
+}
+
+async function genererRelanceIA() {
+  if (!prospectSelectionne) {
+    alert("Aucun prospect sélectionné.");
+    return;
+  }
+
+  const bouton = Array.from(document.querySelectorAll('#prospectModal button'))
+    .find(b => (b.textContent || "").includes("Générer avec Gemini"));
+  const zone = document.getElementById("statutRelanceIA");
+  const textarea = document.getElementById("messageRelance");
+
+  if (bouton) bouton.disabled = true;
+  if (zone) zone.textContent = "⏳ Génération de la relance personnalisée...";
+
+  try {
+    const numero = prospectSelectionne.telephone || prospectSelectionne.whatsapp_id;
+    if (!numero) throw new Error("Numéro WhatsApp introuvable.");
+
+    const response = await fetch("/robot/relance-personnalisee", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: numero })
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || "Impossible de générer la relance.");
+    }
+
+    if (textarea) textarea.value = data.message || "";
+    prospectSelectionne._messageRelance = data.message || "";
+
+    if (zone) {
+      zone.textContent = data.fallback
+        ? "🟠 Message généré en mode secours CRM. Vous pouvez le modifier avant envoi."
+        : "🟢 Message personnalisé généré par Gemini. Vous pouvez le modifier avant envoi.";
+    }
+
+  } catch (error) {
+    console.error("Erreur génération relance IA :", error);
+    if (zone) zone.textContent = "❌ " + error.message;
+    alert("❌ Génération impossible : " + error.message);
+  } finally {
+    if (bouton) bouton.disabled = false;
   }
 }
 
