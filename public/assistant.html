@@ -175,7 +175,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 <body>
 <header>
 <div class="brand">🛡️ VisionProtection</div>
-<div class="badge">Assistant Commercial IA — V1.4</div>
+<div class="badge">Assistant Commercial IA — V1.6</div>
 </header>
 
 <div class="layout">
@@ -213,7 +213,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
   <div class="ia-dashboard">
     <div class="ia-dashboard-head">
       <div>
-        <h2 style="margin:0">🎯 Tableau de bord commercial IA V1.4</h2>
+        <h2 style="margin:0">🎯 Tableau de bord commercial IA V1.6</h2>
         <div id="iaDashboardMeta" class="ia-report-meta">Chargement du tableau de bord...</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -248,7 +248,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 
 <section class="panel" id="iaPanel">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
-    <h2 style="margin:0">🤖 Rapport commercial IA V1.4</h2>
+    <h2 style="margin:0">🤖 Rapport commercial IA V1.6</h2>
     <button class="secondary" style="width:auto;margin-top:0" onclick="lancerRapportIA()">↻ Actualiser</button>
   </div>
   <div id="iaStatus" style="margin-top:10px;color:#667085;font-size:13px;">Aucun rapport généré.</div>
@@ -453,6 +453,28 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
       <div id="statutRelanceIA" style="margin-top:8px;color:#667085;font-size:12px;">
         Gemini prépare le message uniquement à votre demande. Aucun envoi automatique n'est effectué.
       </div>
+    </div>
+
+
+    <!-- HISTORIQUE INTELLIGENT V1.6 -->
+    <div style="
+      margin:0 20px 20px;
+      padding:16px;
+      background:#fffaf0;
+      border:1px solid #f2d59c;
+      border-radius:10px;
+    ">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div style="font-size:14px;font-weight:bold;">🧠 Historique intelligent V1.6</div>
+        <button type="button" onclick="analyserHistoriqueIA()" style="background:#b45309;color:white;">
+          🤖 Analyser l'historique
+        </button>
+      </div>
+      <div id="resumeHistoriqueV16" style="margin-top:10px;color:#667085;font-size:13px;">
+        Cliquez sur « Analyser l'historique » pour examiner les échanges et les notes commerciales de ce prospect.
+      </div>
+      <div id="analyseHistoriqueV16" style="display:none;margin-top:12px;padding:12px;background:white;border:1px solid #eadfc8;border-radius:8px;white-space:pre-wrap;font-size:13px;line-height:1.5;"></div>
+      <div id="statutHistoriqueV16" style="margin-top:8px;color:#667085;font-size:12px;"></div>
     </div>
 
     <!-- NOTES COMMERCIALES -->
@@ -810,6 +832,52 @@ async function detecterRelances() {
       '<p style="color:#b42318">❌ Impossible de charger les prospects à relancer : ' +
       escapeHtml(error.message) +
       '</p>';
+  }
+}
+
+async function analyserHistoriqueIA() {
+  if (!prospectSelectionne) {
+    alert("Aucun prospect sélectionné.");
+    return;
+  }
+
+  const zone = document.getElementById("statutHistoriqueV16");
+  const analyseZone = document.getElementById("analyseHistoriqueV16");
+  const resume = document.getElementById("resumeHistoriqueV16");
+  const boutons = Array.from(document.querySelectorAll('#prospectModal button'))
+    .filter(b => (b.textContent || '').includes("Analyser l'historique"));
+
+  boutons.forEach(b => b.disabled = true);
+  if (zone) zone.textContent = "⏳ Analyse des échanges en cours...";
+
+  try {
+    const numero = prospectSelectionne.telephone || prospectSelectionne.whatsapp_id;
+    if (!numero) throw new Error("Numéro WhatsApp introuvable.");
+
+    const response = await fetch("/robot/analyser-historique", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: numero })
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.message || "Analyse impossible.");
+
+    if (resume) resume.textContent = `💬 ${data.history_count || 0} échange(s) analysé(s) • 📝 ${data.notes_count || 0} note(s) commerciale(s)`;
+    if (analyseZone) {
+      analyseZone.style.display = "block";
+      analyseZone.textContent = data.analyse || "Aucune analyse disponible.";
+    }
+    if (zone) {
+      zone.textContent = data.fallback
+        ? "🟠 Analyse réalisée en mode secours CRM."
+        : `🟢 Analyse Gemini — ${data.model || 'gemini'}`;
+    }
+  } catch (error) {
+    console.error("Erreur analyse historique V1.6 :", error);
+    if (zone) zone.textContent = "❌ " + error.message;
+    alert("❌ Analyse impossible : " + error.message);
+  } finally {
+    boutons.forEach(b => b.disabled = false);
   }
 }
 
