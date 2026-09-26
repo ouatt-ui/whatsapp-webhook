@@ -693,6 +693,170 @@ AND COALESCE(
 
 // ================== FIN PROSPECTS À RELANCER V1 ==================
 
+// ================== RELANCE PERSONNALISEE GEMINI V1.5 ==================
+
+function genererRelanceFallbackV15(prospect, historique = []) {
+  const nom = prospect?.nom && prospect.nom !== "Sans nom" ? prospect.nom : "";
+  const service = prospect?.service && prospect.service !== "Non défini" ? prospect.service : "votre projet";
+  const besoin = String(prospect?.besoin || "").trim();
+
+  let message = "Bonjour" + (nom ? " " + nom : "") + ",\n\n";
+  message += "Nous revenons vers vous concernant " + service + ".\n\n";
+  if (besoin) message += "Vous nous aviez indiqué : " + besoin + ".\n\n";
+  message += "Nous souhaitons savoir si votre projet est toujours d'actualité et si vous souhaitez que notre équipe vous accompagne pour la prochaine étape.\n\n";
+  message += "Nous restons à votre disposition pour toute information complémentaire ou pour préparer votre devis.\n\n";
+  message += "Cordialement,\nVisionProtection & Informatique\nEfficacité et professionnalisme";
+  return message;
+}
+
+app.post("/robot/relance-personnalisee", async (req, res) => {
+  try {
+    if (!dbReady || !pool) {
+      return res.status(503).json({ success:false, message:"Base MySQL non disponible." });
+    }
+
+    const phone = String(req.body?.phone || "").trim();
+    if (!phone) {
+      return res.status(400).json({ success:false, message:"Numéro du prospect obligatoire." });
+    }
+
+    const phoneApi = normalizeForApi(phone);
+    const [rows] = await pool.query(
+      `SELECT id, whatsapp_id, telephone, nom, ville, service, besoin, statut, etat_conversation, created_at, updated_at
+       FROM prospects
+       WHERE whatsapp_id=? OR telephone=? OR whatsapp_id=? OR telephone=?
+       LIMIT 1`,
+      [phone, phone, phoneApi, phoneApi]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({ success:false, message:"Prospect introuvable." });
+    }
+
+    const prospect = rows[0];
+    const statutsAutorises = ["Nouveau", "En cours", "Qualifié", "Devis"];
+    if (!statutsAutorises.includes(prospect.statut)) {
+      return res.status(409).json({
+        success:false,
+        message:`Génération de relance interdite pour le statut « ${prospect.statut} ».`
+      });
+    }
+
+    const [messages] = await pool.query(
+      `SELECT direction, message, message_type, created_at
+       FROM messages
+       WHERE prospect_id=?
+       ORDER BY created_at DESC
+       LIMIT 12`,
+      [prospect.id]
+    );
+
+    const [notes] = await pool.query(
+      `SELECT note, auteur, created_at
+       FROM notes_commerciales
+       WHERE prospect_id=?
+       ORDER BY created_at DESC
+       LIMIT 8`,
+      [prospect.id]
+    );
+
+    const historique = messages.reverse().map(m => ({
+      direction: m.direction,
+      message: String(m.message || "").slice(0, 1200),
+      date: m.created_at
+    }));
+
+    const notesCommerciales = notes.map(n => ({
+      note: String(n.note || "").slice(0, 800),
+      auteur: n.auteur,
+      date: n.created_at
+    }));
+
+    const donnees = {
+      prospect: {
+        nom: prospect.nom || "Sans nom",
+        telephone: prospect.telephone,
+        ville: prospect.ville || "Non définie",
+        service: prospect.service || "Non défini",
+        besoin: prospect.besoin || "",
+        statut: prospect.statut,
+        etat_conversation: prospect.etat_conversation,
+        derniere_activite: prospect.updated_at || prospect.created_at
+      },
+      historique,
+      notes: notesCommerciales
+    };
+
+    const prompt = `
+Tu es l'assistant commercial de VisionProtection & Informatique à Abidjan.
+
+Ta mission est de rédiger UNE relance WhatsApp commerciale personnalisée pour le prospect ci-dessous.
+
+DONNEES DU PROSPECT :
+${JSON.stringify(donnees, null, 2)}
+
+REGLES :
+- Réponds uniquement avec le texte final du message WhatsApp.
+- Message court, naturel, professionnel et chaleureux.
+- Personnalise avec le nom si disponible.
+- Tiens compte du service et du besoin réellement enregistrés.
+- Utilise l'historique et les notes uniquement pour mieux contextualiser la relance.
+- Ne prétends jamais qu'une action a été réalisée si ce n'est pas indiqué.
+- Ne promets aucun prix, délai ou disponibilité qui n'est pas présent dans les données.
+- Ne parle pas de Gemini, d'IA, de CRM ou d'analyse interne.
+- Ne demande pas inutilement toutes les informations déjà connues.
+- Termine par une invitation simple à répondre ou à poursuivre le projet.
+- Signature obligatoire :
+Cordialement,
+VisionProtection & Informatique
+Efficacité et professionnalisme
+`;
+
+    let message = "";
+    let model = "CRM-FALLBACK";
+    let fallback = false;
+    let fallbackReason = null;
+
+    try {
+      const result = await callGemini(prompt, { max503Retries: 1 });
+      message = String(result.text || "").trim();
+      if (!message) throw new Error("Gemini n'a généré aucun message.");
+      model = result.model || "gemini-3.8-flash";
+    } catch (aiError) {
+      fallback = true;
+      fallbackReason = aiError.message;
+      message = genererRelanceFallbackV15(prospect, historique);
+      console.warn("⚠️ RELANCE PERSONNALISÉE EN MODE SECOURS :", aiError.message);
+    }
+
+    res.json({
+      success:true,
+      generated_at:new Date().toISOString(),
+      prospect:{
+        id:prospect.id,
+        nom:prospect.nom,
+        telephone:prospect.telephone,
+        service:prospect.service,
+        besoin:prospect.besoin,
+        statut:prospect.statut
+      },
+      message,
+      model,
+      ai_available:!fallback,
+      fallback,
+      fallback_reason:fallbackReason,
+      history_count:historique.length,
+      notes_count:notesCommerciales.length,
+      sent:false
+    });
+  } catch (error) {
+    console.error("❌ ERREUR RELANCE PERSONNALISÉE V1.5 :", error.response?.data || error.message);
+    res.status(500).json({ success:false, message:error.message });
+  }
+});
+
+// ================== FIN RELANCE PERSONNALISEE GEMINI V1.5 ==================
+
 // ================== ENVOI RELANCE WHATSAPP V1.3 ==================
 
 app.post("/robot/relance-whatsapp", async (req, res) => {
@@ -1325,6 +1489,6 @@ try {
 });
 
 // ================== FIN ROBOT IA COMMERCIAL ==================
-app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.4-v1.4",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
-async function start(){await initDatabase();app.listen(PORT,"0.0.0.0",()=>console.log(`VisionProtection WhatsApp CRM v2.5.4 V1.3 RESILIENT - port ${PORT} - DB ${dbReady?"MYSQL":"MEMORY"}`));}
+app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.4-v1.5",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
+async function start(){await initDatabase();app.listen(PORT,"0.0.0.0",()=>console.log(`VisionProtection WhatsApp CRM v2.5.4 V1.5 RESILIENT - port ${PORT} - DB ${dbReady?"MYSQL":"MEMORY"}`));}
 start().catch(e=>{console.error("❌ ERREUR DÉMARRAGE :",e.message);process.exit(1);});
