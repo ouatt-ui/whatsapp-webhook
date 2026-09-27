@@ -2,6 +2,8 @@ const express=require("express");
 const axios=require("axios");
 const mysql=require("mysql2/promise");
 const {GoogleGenAI}=require("@google/genai");
+const XLSX=require("xlsx");
+const PDFDocument=require("pdfkit");
 // ================== APPEL GEMINI ROBUSTE V1.3 ==================
 
 let geminiHealth = {
@@ -260,8 +262,32 @@ await pool.query(`
    INDEX idx_notes_prospect(prospect_id),
    CONSTRAINT fk_notes_prospect FOREIGN KEY(prospect_id) REFERENCES prospects(id) ON DELETE CASCADE
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS devis(
+   id BIGINT AUTO_INCREMENT PRIMARY KEY,
+   prospect_id INT NOT NULL,
+   numero_devis VARCHAR(50) NOT NULL UNIQUE,
+   date_devis DATE NOT NULL,
+   objet VARCHAR(255) NULL,
+   total DECIMAL(15,2) NOT NULL DEFAULT 0,
+   notes TEXT NULL,
+   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+   INDEX idx_devis_prospect(prospect_id),
+   CONSTRAINT fk_devis_prospect FOREIGN KEY(prospect_id) REFERENCES prospects(id) ON DELETE CASCADE
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS devis_lignes(
+   id BIGINT AUTO_INCREMENT PRIMARY KEY,
+   devis_id BIGINT NOT NULL,
+   designation VARCHAR(255) NOT NULL,
+   quantite DECIMAL(12,2) NOT NULL DEFAULT 1,
+   prix_unitaire DECIMAL(15,2) NOT NULL DEFAULT 0,
+   prix_total DECIMAL(15,2) NOT NULL DEFAULT 0,
+   ordre INT NOT NULL DEFAULT 0,
+   INDEX idx_devis_lignes_devis(devis_id),
+   CONSTRAINT fk_devis_lignes_devis FOREIGN KEY(devis_id) REFERENCES devis(id) ON DELETE CASCADE
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
   dbReady=true; console.log("✅ MYSQL : connexion Aiven opérationnelle.");
-  console.log("✅ MYSQL : tables prospects, messages et notes_commerciales vérifiées.");
+  console.log("✅ MYSQL : tables prospects, messages, notes_commerciales, devis et devis_lignes vérifiées.");
  }catch(e){
   console.error("❌ MYSQL : erreur de connexion :",e.message);
   if(pool){try{await pool.end();}catch(_){} pool=null;}
@@ -1691,6 +1717,174 @@ try {
 });
 
 // ================== FIN ROBOT IA COMMERCIAL ==================
-app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.4-v1.6",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
-async function start(){await initDatabase();app.listen(PORT,"0.0.0.0",()=>console.log(`VisionProtection WhatsApp CRM v2.5.4 V1.5 RESILIENT - port ${PORT} - DB ${dbReady?"MYSQL":"MEMORY"}`));}
+app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.4-v1.8",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
+
+
+// ================== DEVIS V1.8 ==================
+function dateDevisDefaut(){
+  return new Date().toISOString().slice(0,10);
+}
+function normaliserLignesDevis(lignes){
+  return (Array.isArray(lignes)?lignes:[]).map((l,i)=>{
+    const designation=String(l?.designation||'').trim();
+    const quantite=Math.max(0,Number(l?.quantite||0));
+    const prix_unitaire=Math.max(0,Number(l?.prix_unitaire||0));
+    const prix_total=Number((quantite*prix_unitaire).toFixed(2));
+    return {designation,quantite,prix_unitaire,prix_total,ordre:i};
+  }).filter(l=>l.designation);
+}
+function calculerTotalDevis(lignes){
+  return Number(lignes.reduce((s,l)=>s+l.prix_total,0).toFixed(2));
+}
+function numeroDevisAuto(id){
+  return `DEV-${new Date().getFullYear()}-${String(id).padStart(5,'0')}`;
+}
+function chargerProspectPourDevis(req,res){
+  return null;
+}
+
+app.get('/crm/devis/prospect/:prospectId', async (req,res)=>{
+  try{
+    if(!dbReady||!pool) return res.status(503).json({success:false,message:'Base MySQL non disponible.'});
+    const prospectId=Number(req.params.prospectId);
+    if(!prospectId) return res.status(400).json({success:false,message:'Prospect invalide.'});
+    const [prospectRows]=await pool.query(`SELECT id,nom,telephone,whatsapp_id,entreprise,ville,service,besoin,statut FROM prospects WHERE id=? LIMIT 1`,[prospectId]);
+    if(!prospectRows.length) return res.status(404).json({success:false,message:'Prospect introuvable.'});
+    const [devisRows]=await pool.query(`SELECT id,prospect_id,numero_devis,date_devis,objet,total,notes,created_at,updated_at FROM devis WHERE prospect_id=? ORDER BY created_at DESC LIMIT 20`,[prospectId]);
+    let devis=[];
+    for(const d of devisRows){
+      const [lignes]=await pool.query(`SELECT id,designation,quantite,prix_unitaire,prix_total,ordre FROM devis_lignes WHERE devis_id=? ORDER BY ordre,id`,[d.id]);
+      devis.push({...d,total:Number(d.total),lignes:lignes.map(l=>({...l,quantite:Number(l.quantite),prix_unitaire:Number(l.prix_unitaire),prix_total:Number(l.prix_total)}))});
+    }
+    res.json({success:true,prospect:prospectRows[0],devis});
+  }catch(error){
+    console.error('❌ DEVIS GET :',error.message);
+    res.status(500).json({success:false,message:error.message});
+  }
+});
+
+app.post('/crm/devis', async (req,res)=>{
+  let conn=null;
+  try{
+    if(!dbReady||!pool) return res.status(503).json({success:false,message:'Base MySQL non disponible.'});
+    const prospectId=Number(req.body?.prospect_id);
+    const lignes=normaliserLignesDevis(req.body?.lignes);
+    if(!prospectId) return res.status(400).json({success:false,message:'Prospect obligatoire.'});
+    if(!lignes.length) return res.status(400).json({success:false,message:'Ajoutez au moins une ligne au devis.'});
+    const [prospectRows]=await pool.query(`SELECT id FROM prospects WHERE id=? LIMIT 1`,[prospectId]);
+    if(!prospectRows.length) return res.status(404).json({success:false,message:'Prospect introuvable.'});
+    const dateDevis=String(req.body?.date_devis||dateDevisDefaut()).slice(0,10);
+    const objet=String(req.body?.objet||'').trim().slice(0,255);
+    const notes=String(req.body?.notes||'').trim();
+    const total=calculerTotalDevis(lignes);
+    conn=await pool.getConnection();
+    await conn.beginTransaction();
+    const [ins]=await conn.query(`INSERT INTO devis(prospect_id,numero_devis,date_devis,objet,total,notes) VALUES(?,?,?,?,?,?)`,[prospectId,'TEMP-'+Date.now(),dateDevis,objet,total,notes]);
+    const devisId=ins.insertId;
+    const numero=numeroDevisAuto(devisId);
+    await conn.query(`UPDATE devis SET numero_devis=? WHERE id=?`,[numero,devisId]);
+    for(const l of lignes){
+      await conn.query(`INSERT INTO devis_lignes(devis_id,designation,quantite,prix_unitaire,prix_total,ordre) VALUES(?,?,?,?,?,?)`,[devisId,l.designation,l.quantite,l.prix_unitaire,l.prix_total,l.ordre]);
+    }
+    await conn.commit(); conn.release(); conn=null;
+    res.json({success:true,devis:{id:devisId,prospect_id:prospectId,numero_devis:numero,date_devis:dateDevis,objet,total,notes,lignes}});
+  }catch(error){
+    if(conn){try{await conn.rollback();conn.release();}catch(_){} }
+    console.error('❌ DEVIS SAVE :',error.message);
+    res.status(500).json({success:false,message:error.message});
+  }
+});
+
+async function lirePayloadDevis(req,res){
+  const prospectId=Number(req.body?.prospect_id);
+  if(!prospectId) throw new Error('Prospect obligatoire.');
+  const [prospectRows]=await pool.query(`SELECT id,nom,telephone,whatsapp_id,entreprise,ville,service,besoin FROM prospects WHERE id=? LIMIT 1`,[prospectId]);
+  if(!prospectRows.length) throw new Error('Prospect introuvable.');
+  const prospect=prospectRows[0];
+  const lignes=normaliserLignesDevis(req.body?.lignes);
+  if(!lignes.length) throw new Error('Ajoutez au moins une ligne au devis.');
+  const total=calculerTotalDevis(lignes);
+  return {prospect,lignes,total,date_devis:String(req.body?.date_devis||dateDevisDefaut()).slice(0,10),objet:String(req.body?.objet||'').trim(),notes:String(req.body?.notes||'').trim(),numero_devis:String(req.body?.numero_devis||'').trim()};
+}
+
+app.post('/crm/devis/export/excel', async (req,res)=>{
+  try{
+    if(!dbReady||!pool) return res.status(503).json({success:false,message:'Base MySQL non disponible.'});
+    const d=await lirePayloadDevis(req,res);
+    const rows=[
+      ['VISIONPROTECTION & INFORMATIQUE'],
+      ['Efficacité et professionnalisme'],
+      [],
+      ['DEVIS',d.numero_devis||'À attribuer', 'Date', d.date_devis],
+      ['Prospect',d.prospect.nom||'', 'Téléphone',d.prospect.telephone||d.prospect.whatsapp_id||''],
+      ['Entreprise',d.prospect.entreprise||'', 'Ville',d.prospect.ville||''],
+      ['Service',d.prospect.service||'', 'Besoin',d.prospect.besoin||''],
+      [],
+      ['Désignation','Quantité','Prix unitaire (FCFA)','Prix total (FCFA)']
+    ];
+    d.lignes.forEach(l=>rows.push([l.designation,l.quantite,l.prix_unitaire,l.prix_total]));
+    rows.push([]);
+    rows.push(['','','TOTAL GÉNÉRAL (FCFA)',d.total]);
+    if(d.objet) rows.push(['Objet',d.objet]);
+    if(d.notes) rows.push(['Notes',d.notes]);
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols']=[{wch:42},{wch:14},{wch:22},{wch:22}];
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Devis');
+    const buffer=XLSX.write(wb,{type:'buffer',bookType:'xlsx'});
+    const filename=`${d.numero_devis||'DEVIS'}-${String(d.prospect.nom||'prospect').replace(/[^a-z0-9_-]/gi,'_')}.xlsx`;
+    res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition',`attachment; filename="${filename}"`);
+    res.send(buffer);
+  }catch(error){console.error('❌ DEVIS EXCEL :',error.message);res.status(500).json({success:false,message:error.message});}
+});
+
+app.post('/crm/devis/export/pdf', async (req,res)=>{
+  try{
+    if(!dbReady||!pool) return res.status(503).json({success:false,message:'Base MySQL non disponible.'});
+    const d=await lirePayloadDevis(req,res);
+    const doc=new PDFDocument({size:'A4',margin:45});
+    const filename=`${d.numero_devis||'DEVIS'}-${String(d.prospect.nom||'prospect').replace(/[^a-z0-9_-]/gi,'_')}.pdf`;
+    res.setHeader('Content-Type','application/pdf');
+    res.setHeader('Content-Disposition',`attachment; filename="${filename}"`);
+    doc.pipe(res);
+    doc.fontSize(18).font('Helvetica-Bold').text('VISIONPROTECTION & INFORMATIQUE');
+    doc.fontSize(10).font('Helvetica').text('Efficacité et professionnalisme');
+    doc.moveDown(0.8);
+    doc.fontSize(16).font('Helvetica-Bold').text('DEVIS');
+    doc.fontSize(10).font('Helvetica').text(`N° : ${d.numero_devis||'À attribuer'}    Date : ${d.date_devis}`);
+    doc.moveDown(0.7);
+    doc.font('Helvetica-Bold').text('Informations prospect');
+    doc.font('Helvetica').text(`Nom : ${d.prospect.nom||'—'}`);
+    doc.text(`Téléphone : ${d.prospect.telephone||d.prospect.whatsapp_id||'—'}`);
+    doc.text(`Entreprise : ${d.prospect.entreprise||'—'}`);
+    doc.text(`Ville : ${d.prospect.ville||'—'}`);
+    doc.text(`Service : ${d.prospect.service||'—'}`);
+    doc.text(`Besoin : ${d.prospect.besoin||'—'}`);
+    if(d.objet) doc.text(`Objet : ${d.objet}`);
+    doc.moveDown(0.8);
+    const x=[45,285,355,455], widths=[240,70,100,100];
+    let y=doc.y;
+    doc.font('Helvetica-Bold').fontSize(9);
+    ['Désignation','Quantité','Prix unitaire','Prix total'].forEach((h,i)=>doc.text(h,x[i],y,{width:widths[i]}));
+    y+=18; doc.font('Helvetica').fontSize(9);
+    d.lignes.forEach(l=>{
+      if(y>735){doc.addPage();y=45;}
+      doc.text(l.designation,x[0],y,{width:widths[0]});
+      doc.text(String(l.quantite),x[1],y,{width:widths[1],align:'right'});
+      doc.text(`${l.prix_unitaire.toLocaleString('fr-FR')} FCFA`,x[2],y,{width:widths[2],align:'right'});
+      doc.text(`${l.prix_total.toLocaleString('fr-FR')} FCFA`,x[3],y,{width:widths[3],align:'right'});
+      y+=18;
+    });
+    doc.moveTo(45,y+3).lineTo(555,y+3).stroke(); y+=15;
+    doc.font('Helvetica-Bold').fontSize(11).text(`TOTAL GÉNÉRAL : ${d.total.toLocaleString('fr-FR')} FCFA`,330,y,{width:225,align:'right'});
+    y+=30;
+    if(d.notes){doc.font('Helvetica-Bold').fontSize(10).text('Notes');doc.font('Helvetica').fontSize(9).text(d.notes,{width:510});}
+    doc.moveDown(2); doc.fontSize(9).text('Document généré par VisionProtection & Informatique.');
+    doc.end();
+  }catch(error){console.error('❌ DEVIS PDF :',error.message);if(!res.headersSent)res.status(500).json({success:false,message:error.message});}
+});
+
+// ================== FIN DEVIS V1.8 ==================
+
+async function start(){await initDatabase();app.listen(PORT,"0.0.0.0",()=>console.log(`VisionProtection WhatsApp CRM v2.5.4 V1.8 - port ${PORT} - DB ${dbReady?"MYSQL":"MEMORY"}`));}
 start().catch(e=>{console.error("❌ ERREUR DÉMARRAGE :",e.message);process.exit(1);});
