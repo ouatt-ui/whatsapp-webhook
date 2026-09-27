@@ -254,7 +254,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 <section class="panel" id="prospectionWebV20">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
     <div>
-      <h2 style="margin:0">🔎 Prospection Web IA — V2.0.2</h2>
+      <h2 style="margin:0">🔎 Prospection Web IA — V2.0.3</h2>
       <div style="font-size:12px;color:#667085;margin-top:5px;">Gemini + Google Search pour détecter des opportunités publiques. Validation humaine avant ajout au CRM.</div>
     </div>
     <span id="webProspectionStatus" class="ia-status-pill">Prêt</span>
@@ -1926,31 +1926,47 @@ function renderOpportunitesWebV20(rows){
     </div>
   </div>`).join('');
 }
-async function verifierEtatGoogleSearchV201(){
+async function chargerEtatWebSearchV204(){
   const zone=document.getElementById('webSearchHealthV201');
-  if(zone)zone.textContent='⏳ Vérification de l’état Gemini/Google Search...';
   try{
     const d=await fetchJsonV202('/robot/web-search-status');
-    if(!d.success)throw new Error(d.message||'État indisponible.');
-    if(d.quota_blocked){
-      if(zone){zone.style.background='#fff4db';zone.style.color='#8a5a00';zone.innerHTML='🔴 <strong>Google Search bloqué temporairement</strong> — quota atteint. '+escapeHtml(d.message||'Réessayez plus tard.')+' <span style="opacity:.8">Recherches effectuées depuis le démarrage : '+Number(d.searches||0)+'</span>';}
-    }else if(d.available===true){
-      if(zone){zone.style.background='#e7f7ee';zone.style.color='#087443';zone.innerHTML='🟢 <strong>Gemini + Google Search disponibles</strong> — modèle '+escapeHtml(d.model||'gemini-3.8-flash')+' · recherches : '+Number(d.searches||0)+(d.last_search_at?' · dernière : '+escapeHtml(new Date(d.last_search_at).toLocaleString('fr-FR')):'');}
-    }else{
-      if(zone){zone.style.background='#eef2f6';zone.style.color='#475467';zone.innerHTML='🟡 <strong>État non encore vérifié</strong> — le premier lancement de recherche vérifiera le service sans lancer de nouvelle recherche si un quota est déjà bloqué.';}
-    }
-  }catch(error){
-    if(zone){zone.style.background='#fff1f0';zone.style.color='#b42318';zone.textContent='❌ '+error.message;}
-  }
+    if(d.backend_version!=='2.0.4') throw new Error('Backend détecté : '+(d.backend_version||'inconnu')+'. Déployez index.js V2.0.4.');
+    if(d.quota_blocked){zone.style.background='#fff4db';zone.style.color='#8a5a00';zone.innerHTML='🔴 <strong>Quota Gemini/Google Search temporairement bloqué</strong> — '+escapeHtml(d.message||'Quota atteint.');}
+    else if(d.available===true){zone.style.background='#e7f7ee';zone.style.color='#087443';zone.innerHTML='🟢 <strong>Gemini + Google Search disponibles</strong> — dernière vérification : '+escapeHtml(d.checked_at?new Date(d.checked_at).toLocaleString('fr-FR'):'inconnue');}
+    else if(d.available===false){zone.style.background='#fff1f0';zone.style.color='#b42318';zone.innerHTML='🔴 <strong>Gemini/Google Search indisponibles</strong> — cliquez sur 🧪 Vérifier Gemini pour le diagnostic.';}
+    else {zone.style.background='#eef2f6';zone.style.color='#475467';zone.innerHTML='🟡 <strong>État non encore vérifié</strong> — cliquez sur 🧪 Vérifier Gemini pour lancer le vrai test.';}
+  }catch(e){zone.style.background='#fff1f0';zone.style.color='#b42318';zone.textContent='❌ '+e.message;}
 }
 
+async function verifierEtatGoogleSearchV201(){
+  const zone=document.getElementById('webSearchHealthV201');
+  const info=document.getElementById('webProspectionInfo');
+  if(zone){zone.style.background='#eef2f6';zone.style.color='#475467';zone.innerHTML='⏳ <strong>Vérification réelle en cours...</strong> Appel Gemini + Google Search.';}
+  try{
+    const d=await fetchJsonV202('/robot/web-search-verify');
+    if(d.backend_version!=='2.0.4') throw new Error('Backend détecté : '+(d.backend_version||'inconnu')+'. Déployez index.js V2.0.4.');
+    if(zone){zone.style.background='#e7f7ee';zone.style.color='#087443';zone.innerHTML='🟢 <strong>Gemini + Google Search disponibles</strong> — '+escapeHtml(d.model||'gemini-3.8-flash')+' · vérifié le '+escapeHtml(new Date(d.checked_at).toLocaleString('fr-FR'));}
+    if(info)info.textContent='Vérification réelle réussie. Vous pouvez maintenant lancer une recherche de prospects Web.';
+    return true;
+  }catch(error){
+    const msg=String(error.message||error);
+    const quota=/429|quota|resource_exhausted/i.test(msg)||error.code==='WEB_SEARCH_QUOTA'||error.code==='WEB_SEARCH_QUOTA_COOLDOWN';
+    if(zone){
+      zone.style.background=quota?'#fff4db':'#fff1f0';
+      zone.style.color=quota?'#8a5a00':'#b42318';
+      zone.innerHTML=quota?'🔴 <strong>Quota Gemini/Google Search atteint</strong><br>'+escapeHtml(msg):'🔴 <strong>Vérification impossible</strong><br>'+escapeHtml(msg);
+    }
+    if(info)info.textContent=quota?'La prospection Web est bloquée par le quota Gemini. Le CRM WhatsApp reste opérationnel.':'La vérification Gemini/Google Search a échoué. Consultez le message ci-dessus.';
+    return false;
+  }
+}
 async function rechercherOpportunitesWebV20(){
   const status=document.getElementById('webProspectionStatus');
   const info=document.getElementById('webProspectionInfo');
   const btns=document.querySelectorAll('#prospectionWebV20 button');
   btns.forEach(b=>b.disabled=true);
   if(status){status.className='ia-status-pill';status.textContent='⏳ Recherche web...';}
-  if(info)info.textContent='Gemini utilise Google Search pour rechercher et qualifier les opportunités. Budget local V2.0.2 : maximum 10 résultats, 5 par défaut.';
+  if(info)info.textContent='Gemini utilise Google Search pour rechercher et qualifier les opportunités. Budget local V2.0.3 : maximum 10 résultats, 5 par défaut.';
   try{
     const body={
       zone:document.getElementById('webZone')?.value||'',
@@ -2410,7 +2426,7 @@ function escapeHtml(s){return String(s).replaceAll("&","&amp;").replaceAll("<","
 loadData();
 loadDashboardV14();
 chargerSuiviDevisV19();
-verifierBackendV202().then(()=>{chargerOpportunitesWebV20();verifierEtatGoogleSearchV201();});
+verifierBackendV202().then(()=>{chargerOpportunitesWebV20();chargerEtatWebSearchV204();});
 </script>
 </body>
 </html>
