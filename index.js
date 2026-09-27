@@ -1826,10 +1826,12 @@ function normalizeOpportunityRows(payload){
   })).filter(x=>x.titre&&x.url_source);
 }
 
-app.get('/robot/web-search-status', (req,res)=>{
+app.get('/robot/web-search-status', async (req,res)=>{
+  const now=new Date().toISOString();
   const quotaActive=webSearchQuotaActive();
   res.json({
     success:true,
+    backend_version:'2.0.4',
     configured:Boolean(process.env.GEMINI_API_KEY && gemini),
     model:webSearchHealth.model,
     google_search_grounding:true,
@@ -1841,9 +1843,49 @@ app.get('/robot/web-search-status', (req,res)=>{
     last_search_at:webSearchHealth.lastSearchAt,
     searches:webSearchHealth.searches,
     checked_at:webSearchHealth.lastCheck,
-    message:quotaActive?webSearchQuotaMessage():(webSearchHealth.available===true?'Google Search + Gemini disponibles.':'État non encore vérifié.')
+    server_time:now,
+    message:quotaActive?webSearchQuotaMessage():(webSearchHealth.available===true?'Gemini + Google Search disponibles.':webSearchHealth.available===false?'Gemini/Google Search indisponibles. Cliquez sur Vérifier Gemini pour obtenir le diagnostic réel.':'État non encore vérifié.')
   });
 });
+
+// Vérification ACTIVE : cet endpoint lance réellement un appel Gemini + Google Search.
+app.get('/robot/web-search-verify', async (req,res)=>{
+  if(!gemini){
+    webSearchHealth={...webSearchHealth,available:false,lastCheck:new Date().toISOString(),reason:'CLIENT_NON_INITIALISE',lastError:'GEMINI_API_KEY non configurée.'};
+    return res.status(503).json({success:false,backend_version:'2.0.4',code:'GEMINI_NOT_CONFIGURED',configured:false,available:false,message:'GEMINI_API_KEY non configurée sur Render.'});
+  }
+
+  if(webSearchQuotaActive()){
+    return res.status(429).json({success:false,backend_version:'2.0.4',code:'WEB_SEARCH_QUOTA_COOLDOWN',quota_blocked:true,quota_until:webSearchHealth.quotaUntil,available:false,message:webSearchQuotaMessage()});
+  }
+
+  const checkedAt=new Date().toISOString();
+  try{
+    console.log('🧪 V2.0.4 — vérification ACTIVE Gemini + Google Search...');
+    const response=await gemini.models.generateContent({
+      model:'gemini-3.8-flash',
+      contents:'Recherche sur le web le site officiel de Google. Réponds uniquement par OK.',
+      config:{tools:[{googleSearch:{}}]}
+    });
+
+    webSearchHealth={...webSearchHealth,available:true,lastCheck:checkedAt,lastError:null,reason:null,quotaUntil:null,searches:webSearchHealth.searches+1,lastSearchAt:checkedAt};
+    return res.json({success:true,backend_version:'2.0.4',configured:true,model:webSearchHealth.model,google_search_grounding:true,available:true,quota_blocked:false,searches:webSearchHealth.searches,checked_at:checkedAt,last_search_at:checkedAt,message:'Gemini + Google Search sont disponibles.',preview:String(response?.text||'OK').slice(0,120)});
+  }catch(e){
+    const typeError=classifyGeminiError(e);
+    const msg=String(e?.message||e);
+    console.error('❌ V2.0.4 — vérification Gemini/Google Search :',msg);
+    webSearchHealth={...webSearchHealth,available:false,lastCheck:checkedAt,reason:typeError,lastError:msg};
+    if(typeError==='QUOTA' || /resource_exhausted|quota|rate.?limit|too many requests/i.test(msg)){
+      const until=new Date(Date.now()+WEB_SEARCH_QUOTA_COOLDOWN_MS).toISOString();
+      webSearchHealth={...webSearchHealth,quotaUntil:until,reason:'QUOTA'};
+      return res.status(429).json({success:false,backend_version:'2.0.4',code:'WEB_SEARCH_QUOTA',quota_blocked:true,quota_until:until,available:false,message:'⚠️ Quota Gemini/Google Search atteint. '+msg.slice(0,500)});
+    }
+    return res.status(500).json({success:false,backend_version:'2.0.4',code:'WEB_SEARCH_VERIFY_ERROR',available:false,message:'Échec de la vérification Gemini + Google Search : '+msg.slice(0,700)});
+  }
+});
+
+// Diagnostic serveur très simple, sans appel Gemini.
+app.get('/robot/web-search-diagnostic',(req,res)=>res.json({success:true,backend_version:'2.0.4',gemini_configured:Boolean(process.env.GEMINI_API_KEY && gemini),web_search_endpoint:'/robot/web-search-verify',status_endpoint:'/robot/web-search-status'}));
 
 app.post('/robot/opportunites-web', async (req,res)=>{
   const startedAt=new Date();
@@ -2012,7 +2054,7 @@ app.post('/crm/opportunites-web/:id/ajouter-crm',async(req,res)=>{
 app.get('/robot/web-search-diagnostic', (req,res)=>{
   res.json({
     success:true,
-    backend_version:'2.5.4-v2.0.2',
+    backend_version:'2.0.4',
     web_search_routes:true,
     gemini_configured:Boolean(process.env.GEMINI_API_KEY && gemini),
     database:dbReady?'mysql-connected':'memory-fallback',
@@ -2024,7 +2066,7 @@ app.get('/robot/web-search-diagnostic', (req,res)=>{
   });
 });
 
-app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.4-v2.0.2",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
+app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.0.4",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
 
 
 // ================== DEVIS V1.8 ==================
