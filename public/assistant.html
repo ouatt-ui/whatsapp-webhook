@@ -179,7 +179,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 <body>
 <header>
 <div class="brand">🛡️ VisionProtection</div>
-<div class="badge">Assistant Commercial IA — V1.8</div>
+<div class="badge">Assistant Commercial IA — V1.9</div>
 </header>
 
 <div class="layout">
@@ -248,6 +248,23 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
       </div>
     </div>
   </div>
+</section>
+
+<section class="panel" id="devisSuiviPanelV19">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+    <div>
+      <h2 style="margin:0">📄 Suivi des devis V1.9</h2>
+      <div id="devisSuiviMetaV19" style="font-size:12px;color:#667085;margin-top:5px;">Chargement...</div>
+    </div>
+    <button class="secondary" style="width:auto;margin-top:0" onclick="chargerSuiviDevisV19()">↻ Actualiser</button>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px;">
+    <div class="ia-kpi"><div class="ia-kpi-label">Devis actifs</div><div class="ia-kpi-value" id="v19DevisActifs">—</div></div>
+    <div class="ia-kpi"><div class="ia-kpi-label">À suivre</div><div class="ia-kpi-value" id="v19DevisAttente">—</div></div>
+    <div class="ia-kpi"><div class="ia-kpi-label">CA potentiel</div><div class="ia-kpi-value" id="v19CaPotentiel">—</div></div>
+    <div class="ia-kpi"><div class="ia-kpi-label">CA accepté</div><div class="ia-kpi-value" id="v19CaAccepte">—</div></div>
+  </div>
+  <div id="devisSuiviListeV19" style="margin-top:14px;">Chargement...</div>
 </section>
 
 <section class="panel" id="iaPanel">
@@ -498,7 +515,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
     <!-- DEVIS V1.8 -->
     <div style="margin:0 20px 20px;padding:16px;background:#f7fbff;border:1px solid #cfe0f5;border-radius:10px;">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
-        <div style="font-size:15px;font-weight:bold;">📄 Devis V1.8</div>
+        <div style="font-size:15px;font-weight:bold;">📄 Devis V1.9</div>
         <div id="devisStatut" style="font-size:12px;color:#667085;">Nouveau devis</div>
       </div>
 
@@ -508,6 +525,18 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
         </label>
         <label style="font-size:12px;color:#667085;">Date
           <input id="devisDate" type="date" style="width:100%;padding:9px;border:1px solid #ccd4df;border-radius:7px;">
+        </label>
+        <label style="font-size:12px;color:#667085;">Statut du devis
+          <select id="devisStatutSuivi" style="width:100%;padding:9px;border:1px solid #ccd4df;border-radius:7px;background:white;">
+            <option value="Brouillon">📝 Brouillon</option>
+            <option value="Envoyé">📤 Envoyé</option>
+            <option value="En attente">⏳ En attente</option>
+            <option value="Accepté">✅ Accepté</option>
+            <option value="Refusé">❌ Refusé</option>
+          </select>
+        </label>
+        <label style="font-size:12px;color:#667085;">Date d'échéance
+          <input id="devisDateEcheance" type="date" style="width:100%;padding:9px;border:1px solid #ccd4df;border-radius:7px;">
         </label>
         <label style="font-size:12px;color:#667085;grid-column:1/-1;">Objet du devis
           <input id="devisObjet" placeholder="Ex. Installation vidéosurveillance" style="width:100%;padding:9px;border:1px solid #ccd4df;border-radius:7px;">
@@ -549,6 +578,9 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
       <label style="display:block;margin-top:12px;font-size:12px;color:#667085;">Notes du devis
         <textarea id="devisNotes" placeholder="Conditions, observations, validité du devis..." style="width:100%;min-height:70px;padding:9px;border:1px solid #ccd4df;border-radius:7px;resize:vertical;"></textarea>
       </label>
+      <label style="display:block;margin-top:10px;font-size:12px;color:#667085;">Commentaire de suivi
+        <textarea id="devisCommentaireSuivi" placeholder="Ex. Devis envoyé au client, attente de validation..." style="width:100%;min-height:55px;padding:9px;border:1px solid #ccd4df;border-radius:7px;resize:vertical;"></textarea>
+      </label>
 
       <label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:13px;">
         <input type="checkbox" id="devisPasserStatut"> Après enregistrement, passer le prospect au statut « Devis »
@@ -560,7 +592,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
         <button type="button" onclick="exporterDevisPDFV18()" style="background:#b42318;color:white;">📄 Export PDF</button>
       </div>
 
-      <div id="devisHistoriqueV18" style="margin-top:14px;"></div>
+      <div id="devisHistoriqueV19" style="margin-top:14px;"></div>
     </div>
 
     <!-- NOTES COMMERCIALES -->
@@ -1795,7 +1827,10 @@ function initialiserDevisV18(prospect){
   document.getElementById('devisBesoin').value=prospect.besoin||'';
   document.getElementById('devisNotes').value='';
   document.getElementById('devisPasserStatut').checked=false;
-  document.getElementById('devisStatut').textContent='Nouveau devis';
+  document.getElementById('devisStatutSuivi').value='Brouillon';
+  document.getElementById('devisDateEcheance').value='';
+  document.getElementById('devisCommentaireSuivi').value='';
+  document.getElementById('devisStatut').textContent='Nouveau devis — Brouillon';
   ajouterLigneDevis();
   chargerDevisExistantsV18(prospect.id);
 }
@@ -1919,7 +1954,11 @@ function payloadDevisV18(){
     date_devis:document.getElementById('devisDate').value,
     objet:document.getElementById('devisObjet').value.trim(),
     lignes,
-    notes:document.getElementById('devisNotes').value.trim()
+    notes:document.getElementById('devisNotes').value.trim(),
+    statut_suivi:document.getElementById('devisStatutSuivi').value,
+    date_envoi:null,
+    date_echeance:document.getElementById('devisDateEcheance').value||null,
+    commentaire_suivi:document.getElementById('devisCommentaireSuivi').value.trim()
   };
 }
 async function enregistrerDevisV18(){
@@ -1930,7 +1969,8 @@ async function enregistrerDevisV18(){
     if(!response.ok||!data.success)throw new Error(data.message||'Impossible d’enregistrer le devis.');
     devisChargeIdV18=data.devis.id;
     document.getElementById('devisNumero').value=data.devis.numero_devis;
-    document.getElementById('devisStatut').textContent='✅ Devis enregistré — '+data.devis.numero_devis;
+    document.getElementById('devisStatut').textContent='✅ Devis enregistré — '+data.devis.numero_devis+' — '+data.devis.statut_suivi;
+    await chargerSuiviDevisV19();
     if(document.getElementById('devisPasserStatut').checked){
       const select=document.getElementById('modalStatut');
       if(select){select.value='Devis'; await enregistrerStatut();}
@@ -1952,7 +1992,7 @@ async function telechargerDevisV18(endpoint,extension){
 function exporterDevisExcelV18(){return telechargerDevisV18('/crm/devis/export/excel','xlsx');}
 function exporterDevisPDFV18(){return telechargerDevisV18('/crm/devis/export/pdf','pdf');}
 async function chargerDevisExistantsV18(prospectId){
-  const box=document.getElementById('devisHistoriqueV18');
+  const box=document.getElementById('devisHistoriqueV19');
   if(!box||!prospectId)return;
   box.innerHTML='<div style="font-size:12px;color:#667085">Chargement des devis précédents...</div>';
   try{
@@ -1960,11 +2000,130 @@ async function chargerDevisExistantsV18(prospectId){
     const d=await r.json();
     if(!r.ok||!d.success)throw new Error(d.message||'Erreur');
     const devis=d.devis||[];
-    if(!devis.length){box.innerHTML='<div style="font-size:12px;color:#667085">Aucun devis enregistré pour ce prospect.</div>';return;}
-    box.innerHTML='<div style="font-weight:bold;font-size:13px;margin-bottom:8px;">📚 Devis enregistrés</div>'+devis.map(x=>`<div style="background:white;border:1px solid #e2e7ef;border-radius:8px;padding:9px;margin-bottom:7px;font-size:12px;"><strong>${escapeHtml(x.numero_devis)}</strong> — ${escapeHtml(x.date_devis)} — <strong>${formatFcfaV18(x.total)}</strong><br>${escapeHtml(x.objet||'Sans objet')}</div>`).join('');
-  }catch(error){box.innerHTML='<div style="font-size:12px;color:#b42318">Impossible de charger les devis précédents.</div>';}
+    if(!devis.length){
+      box.innerHTML='<div style="font-size:12px;color:#667085">Aucun devis enregistré pour ce prospect.</div>';
+      return;
+    }
+    box.innerHTML='<div style="font-weight:bold;font-size:13px;margin-bottom:8px;">📚 Devis enregistrés</div>'+
+      devis.map(x=>`<div style="background:white;border:1px solid #e2e7ef;border-radius:8px;padding:10px;margin-bottom:8px;font-size:12px;">
+        <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+          <strong>${escapeHtml(x.numero_devis)}</strong>
+          <span style="font-weight:bold;">${escapeHtml(x.statut_suivi||'Brouillon')}</span>
+        </div>
+        <div style="margin-top:4px;">${escapeHtml(x.date_devis)} — <strong>${formatFcfaV18(x.total)}</strong> — ${escapeHtml(x.objet||'Sans objet')}</div>
+        ${x.date_echeance?`<div style="margin-top:4px;color:#667085;">Échéance : ${escapeHtml(x.date_echeance)}</div>`:''}
+        ${x.commentaire_suivi?`<div style="margin-top:4px;color:#667085;">${escapeHtml(x.commentaire_suivi)}</div>`:''}
+      </div>`).join('');
+  }catch(error){
+    box.innerHTML='<div style="font-size:12px;color:#b42318">Impossible de charger les devis précédents.</div>';
+  }
 }
-// ================== FIN DEVIS V1.8 ==================
+
+// ================== SUIVI DEVIS V1.9 ==================
+function formatStatutDevisV19(statut){
+  const map={
+    'Brouillon':'📝 Brouillon',
+    'Envoyé':'📤 Envoyé',
+    'En attente':'⏳ En attente',
+    'Accepté':'✅ Accepté',
+    'Refusé':'❌ Refusé'
+  };
+  return map[statut]||statut||'Brouillon';
+}
+async function mettreAJourStatutDevisV19(id,statut,dateEcheance='',commentaire=''){
+  const r=await fetch('/crm/devis/'+encodeURIComponent(id)+'/suivi',{
+    method:'PATCH',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      statut_suivi:statut,
+      date_echeance:dateEcheance||null,
+      commentaire_suivi:commentaire||''
+    })
+  });
+  const d=await r.json();
+  if(!r.ok||!d.success)throw new Error(d.message||'Impossible de mettre à jour le devis.');
+  return d.devis;
+}
+function preparerRelanceDevisV19(d){
+  const nom=d.nom&&d.nom!=='Sans nom'?d.nom:'';
+  const service=d.service||'votre projet';
+  const numero=d.numero_devis||'votre devis';
+  const total=formatFcfaV18(d.total);
+  const message=
+    `Bonjour ${nom},\n\n`+
+    `Nous revenons vers vous concernant le devis ${numero} d'un montant de ${total}, relatif à ${service}.\n\n`+
+    `Nous souhaitons savoir si vous avez pu en prendre connaissance et si vous avez des questions ou souhaitez des ajustements.\n\n`+
+    `Nous restons à votre disposition pour la suite de votre projet.\n\n`+
+    `Cordialement,\nVisionProtection & Informatique\nEfficacité et professionnalisme`;
+  if(prospects.find(p=>String(p.id)===String(d.prospect_id))){
+    const p=prospects.find(p=>String(p.id)===String(d.prospect_id));
+    p._messageRelance=message;
+    ouvrirProspectObjet(p);
+  }else{
+    ouvrirProspectObjet({
+      id:d.prospect_id,nom:d.nom,telephone:d.telephone,whatsapp_id:d.whatsapp_id,
+      entreprise:d.entreprise,ville:d.ville,service:d.service,besoin:d.besoin,
+      statut:d.statut_prospect||'Devis',updated_at:d.updated_at,_messageRelance:message
+    });
+  }
+}
+async function chargerSuiviDevisV19(){
+  const meta=document.getElementById('devisSuiviMetaV19');
+  const list=document.getElementById('devisSuiviListeV19');
+  if(!meta||!list)return;
+  list.innerHTML='Chargement...';
+  try{
+    const r=await fetch('/crm/devis-suivi');
+    const d=await r.json();
+    if(!r.ok||!d.success)throw new Error(d.message||'Impossible de charger le suivi des devis.');
+    const s=d.statistiques||{};
+    document.getElementById('v19DevisActifs').textContent=String((s.brouillons||0)+(s.envoyes||0)+(s.attente||0));
+    document.getElementById('v19DevisAttente').textContent=String((s.attente||0)+(s.en_retard||0));
+    document.getElementById('v19CaPotentiel').textContent=formatFcfaV18(s.potentiel||0);
+    document.getElementById('v19CaAccepte').textContent=formatFcfaV18(s.ca_accepte||0);
+    meta.textContent=`${s.total||0} devis — ${s.acceptes||0} accepté(s) — ${s.refuses||0} refusé(s) — ${s.en_retard||0} en retard`;
+    if(!d.devis?.length){
+      list.innerHTML='<div style="padding:12px;background:#f7f9fc;border-radius:8px;color:#667085;">Aucun devis enregistré.</div>';
+      return;
+    }
+    list.innerHTML=d.devis.map(x=>{
+      const overdue=x.en_retard;
+      const cls=overdue?'#fff1f0':'#fff';
+      const badge=overdue?' ⚠️ EN RETARD':'';
+      return `<div style="border:1px solid #e2e7ef;border-radius:9px;padding:11px;margin-bottom:8px;background:${cls};">
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
+          <div><strong>${escapeHtml(x.numero_devis)}</strong> — ${escapeHtml(x.nom||'Sans nom')} — <strong>${formatFcfaV18(x.total)}</strong></div>
+          <div>${formatStatutDevisV19(x.statut_suivi)}${badge}</div>
+        </div>
+        <div style="font-size:12px;color:#667085;margin-top:5px;">${escapeHtml(x.service||'')} ${x.ville?'— '+escapeHtml(x.ville):''} ${x.objet?'— '+escapeHtml(x.objet):''}</div>
+        <div style="font-size:12px;color:#667085;margin-top:4px;">Échéance : ${escapeHtml(x.date_echeance||'Non définie')} ${x.date_envoi?'— Envoyé le '+escapeHtml(x.date_envoi):''}</div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px;">
+          <select onchange="changerStatutSuiviDevisV19(${x.id},this.value)" style="padding:7px;border:1px solid #ccd4df;border-radius:6px;">
+            ${['Brouillon','Envoyé','En attente','Accepté','Refusé'].map(st=>`<option value="${st}" ${st===x.statut_suivi?'selected':''}>${formatStatutDevisV19(st)}</option>`).join('')}
+          </select>
+          <button type="button" onclick="preparerRelanceDevisV19(${JSON.stringify(x).replace(/</g,'\\u003c')})" style="background:#198754;color:white;padding:7px 10px;">💬 Préparer relance</button>
+        </div>
+      </div>`;
+    }).join('');
+  }catch(error){
+    console.error('Suivi devis V1.9',error);
+    list.innerHTML='<div style="padding:12px;background:#fff1f0;color:#b42318;border-radius:8px;">❌ '+escapeHtml(error.message)+'</div>';
+  }
+}
+async function changerStatutSuiviDevisV19(id,statut){
+  try{
+    const d=await mettreAJourStatutDevisV19(id,statut);
+    await chargerSuiviDevisV19();
+    if(prospectSelectionne && String(prospectSelectionne.id)===String(d.prospect_id)){
+      await chargerDevisExistantsV18(prospectSelectionne.id);
+    }
+  }catch(error){
+    alert('❌ '+error.message);
+    await chargerSuiviDevisV19();
+  }
+}
+// ================== FIN SUIVI DEVIS V1.9 ==================
+
+// ================== FIN DEVIS V1.9 ==================
 
 function addMessage(text,type){
  const d=document.createElement("div");d.className="msg "+type;d.textContent=text;
@@ -1990,6 +2149,7 @@ function ask(question){
 function escapeHtml(s){return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;")}
 loadData();
 loadDashboardV14();
+chargerSuiviDevisV19();
 </script>
 </body>
 </html>
