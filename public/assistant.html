@@ -587,7 +587,8 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
       </label>
 
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-        <button type="button" onclick="enregistrerDevisV18()" style="background:#0b3d91;color:white;">💾 Enregistrer le devis</button>
+        <button id="btnEnregistrerDevisV18" type="button" onclick="enregistrerDevisV18()" style="background:#0b3d91;color:white;">💾 Enregistrer le devis</button>
+        <button id="btnNouveauDevisV19" type="button" onclick="initialiserDevisV18(prospectSelectionne)" style="background:#667085;color:white;">➕ Nouveau devis</button>
         <button type="button" onclick="exporterDevisExcelV18()" style="background:#198754;color:white;">📊 Export Excel</button>
         <button type="button" onclick="exporterDevisPDFV18()" style="background:#b42318;color:white;">📄 Export PDF</button>
       </div>
@@ -1831,6 +1832,8 @@ function initialiserDevisV18(prospect){
   document.getElementById('devisDateEcheance').value='';
   document.getElementById('devisCommentaireSuivi').value='';
   document.getElementById('devisStatut').textContent='Nouveau devis — Brouillon';
+  const btnSave=document.getElementById('btnEnregistrerDevisV18');
+  if(btnSave) btnSave.textContent='💾 Enregistrer le devis';
   ajouterLigneDevis();
   chargerDevisExistantsV18(prospect.id);
 }
@@ -1964,21 +1967,63 @@ function payloadDevisV18(){
 async function enregistrerDevisV18(){
   try{
     const payload=payloadDevisV18();
-    const response=await fetch('/crm/devis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const modeModification=Boolean(devisChargeIdV18);
+    const endpoint=modeModification ? '/crm/devis/'+encodeURIComponent(devisChargeIdV18) : '/crm/devis';
+    const response=await fetch(endpoint,{method:modeModification?'PATCH':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     const data=await response.json();
     if(!response.ok||!data.success)throw new Error(data.message||'Impossible d’enregistrer le devis.');
     devisChargeIdV18=data.devis.id;
     document.getElementById('devisNumero').value=data.devis.numero_devis;
-    document.getElementById('devisStatut').textContent='✅ Devis enregistré — '+data.devis.numero_devis+' — '+data.devis.statut_suivi;
+    document.getElementById('devisStatut').textContent=(modeModification?'✏️ Devis modifié — ':'✅ Devis enregistré — ')+data.devis.numero_devis+' — '+data.devis.statut_suivi;
+    const btnSave=document.getElementById('btnEnregistrerDevisV18');
+    if(btnSave) btnSave.textContent='✏️ Enregistrer les modifications';
     await chargerSuiviDevisV19();
     if(document.getElementById('devisPasserStatut').checked){
       const select=document.getElementById('modalStatut');
       if(select){select.value='Devis'; await enregistrerStatut();}
     }
     await chargerDevisExistantsV18(prospectSelectionne.id);
-    alert('✅ Devis enregistré : '+data.devis.numero_devis+'\n\nTotal : '+formatFcfaV18(data.devis.total));
-  }catch(error){console.error('Erreur devis V1.8',error);alert('❌ '+error.message);}
+    alert((modeModification?'✏️ Devis modifié : ':'✅ Devis enregistré : ')+data.devis.numero_devis+'\n\nTotal : '+formatFcfaV18(data.devis.total));
+  }catch(error){console.error('Erreur devis V1.8/V1.9',error);alert('❌ '+error.message);}
 }
+
+async function modifierDevisV19(id, prospectId){
+  try{
+    if(!prospectId) throw new Error('Prospect associé au devis introuvable.');
+    const r=await fetch('/crm/devis/prospect/'+encodeURIComponent(prospectId));
+    const d=await r.json();
+    if(!r.ok||!d.success) throw new Error(d.message||'Impossible de charger le devis.');
+    const devis=(d.devis||[]).find(x=>String(x.id)===String(id));
+    if(!devis) throw new Error('Devis introuvable.');
+
+    let prospect=prospects.find(p=>String(p.id)===String(prospectId));
+    if(!prospect){
+      prospect=d.prospect||{id:prospectId,nom:'',telephone:'',whatsapp_id:'',entreprise:'',ville:'',service:'',besoin:'',statut:'Devis'};
+    }
+    ouvrirProspectObjet(prospect);
+
+    devisChargeIdV18=devis.id;
+    document.getElementById('devisNumero').value=devis.numero_devis||'';
+    document.getElementById('devisDate').value=String(devis.date_devis||'').slice(0,10);
+    document.getElementById('devisObjet').value=devis.objet||'';
+    document.getElementById('devisNotes').value=devis.notes||'';
+    document.getElementById('devisStatutSuivi').value=devis.statut_suivi||'Brouillon';
+    document.getElementById('devisDateEcheance').value=devis.date_echeance?String(devis.date_echeance).slice(0,10):'';
+    document.getElementById('devisCommentaireSuivi').value=devis.commentaire_suivi||'';
+    document.getElementById('devisPasserStatut').checked=false;
+    document.getElementById('devisStatut').textContent='✏️ Modification du devis — '+devis.numero_devis;
+    const btnSave=document.getElementById('btnEnregistrerDevisV18');
+    if(btnSave) btnSave.textContent='✏️ Enregistrer les modifications';
+    devisLignesV18=(devis.lignes||[]).map(initialiserLigneDevisValeurV18);
+    if(!devisLignesV18.length) devisLignesV18=[initialiserLigneDevisValeurV18({designation:'',quantite:1,prix_unitaire:0})];
+    renderLignesDevisV18();
+    setTimeout(()=>{
+      const bloc=document.getElementById('devisStatut');
+      if(bloc) bloc.scrollIntoView({behavior:'smooth',block:'center'});
+    },50);
+  }catch(error){console.error('Modification devis V1.9',error);alert('❌ '+error.message);}
+}
+
 async function telechargerDevisV18(endpoint,extension){
   try{
     const payload=payloadDevisV18();
@@ -2100,6 +2145,7 @@ async function chargerSuiviDevisV19(){
           <select onchange="changerStatutSuiviDevisV19(${x.id},this.value)" style="padding:7px;border:1px solid #ccd4df;border-radius:6px;">
             ${['Brouillon','Envoyé','En attente','Accepté','Refusé'].map(st=>`<option value="${st}" ${st===x.statut_suivi?'selected':''}>${formatStatutDevisV19(st)}</option>`).join('')}
           </select>
+          <button type="button" onclick="modifierDevisV19(${x.id},${x.prospect_id})" style="background:#0b3d91;color:white;padding:7px 10px;">✏️ Modifier le devis</button>
           <button type="button" onclick="preparerRelanceDevisV19(${JSON.stringify(x).replace(/</g,'\\u003c')})" style="background:#198754;color:white;padding:7px 10px;">💬 Préparer relance</button>
         </div>
       </div>`;
