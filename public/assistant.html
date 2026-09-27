@@ -998,11 +998,27 @@ function ouvrirProspectObjet(prospect) {
   const modal = document.getElementById("prospectModal");
   if (modal) modal.classList.add("show");
 
+  // Réinitialiser l'analyse V1.6 à chaque ouverture de fiche.
+  const resumeV16 = document.getElementById("resumeHistoriqueV16");
+  const analyseV16 = document.getElementById("analyseHistoriqueV16");
+  const statutV16 = document.getElementById("statutHistoriqueV16");
+  if (resumeV16) {
+    resumeV16.textContent = "Cliquez sur « Analyser l'historique » pour examiner les échanges et les notes commerciales de ce prospect.";
+  }
+  if (analyseV16) {
+    analyseV16.style.display = "none";
+    analyseV16.textContent = "";
+  }
+  if (statutV16) {
+    statutV16.textContent = "";
+  }
+
   const setText = (id, value) => {
     const el = document.getElementById(id);
     if (el) el.textContent = value || "—";
   };
 
+  setText("modalNom", prospect.nom || "Prospect");
   setText("modalTelephone", prospect.telephone || prospect.whatsapp_id);
   setText("modalWhatsapp", prospect.whatsapp_id || prospect.telephone);
   setText("modalEntreprise", prospect.entreprise);
@@ -1189,45 +1205,11 @@ async function ouvrirProspect(id) {
     return;
   }
 
-  prospectSelectionne = prospect;
-
-  document.getElementById("modalNom").textContent =
-    prospect.nom || "Prospect";
-
-  document.getElementById("modalTelephone").textContent =
-    prospect.telephone || "—";
-
-  document.getElementById("modalWhatsapp").textContent =
-    prospect.whatsapp_id || "—";
-
-  document.getElementById("modalEntreprise").textContent =
-    prospect.entreprise || "—";
-
-  document.getElementById("modalVille").textContent =
-    prospect.ville || "—";
-
-  document.getElementById("modalService").textContent =
-    prospect.service || "Non défini";
-
-  document.getElementById("modalStatut").value =
-    prospect.statut || "Nouveau";
-
-  document.getElementById("modalBesoin").textContent =
-    prospect.besoin || "—";
-
-  document.getElementById("modalCreated").textContent =
-    formaterDate(prospect.created_at);
-
-  document.getElementById("modalUpdated").textContent =
-    formaterDate(prospect.updated_at);
-
-  
+  // Ouverture centralisée de la fiche prospect.
+  ouvrirProspectObjet(prospect);
 }
-document
-  .getElementById("prospectModal")
-  .classList.add("show");
 
-chargerNotes();async function chargerNotes() {
+async function chargerNotes() {
 
   const container = document.getElementById("listeNotes");
 
