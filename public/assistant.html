@@ -1799,39 +1799,115 @@ function initialiserDevisV18(prospect){
   ajouterLigneDevis();
   chargerDevisExistantsV18(prospect.id);
 }
+function convertirNombreDevisV18(valeur,defaut=0){
+  // Accepte 1234, 1234.50, 1 234,50 et 1.234,50.
+  let s=String(valeur ?? '').trim().replace(/\s/g,'');
+  if(!s) return defaut;
+  if(s.includes(',') && s.includes('.')){
+    // Le dernier séparateur est considéré comme séparateur décimal.
+    if(s.lastIndexOf(',') > s.lastIndexOf('.')) s=s.replace(/\./g,'').replace(',','.');
+    else s=s.replace(/,/g,'');
+  }else if(s.includes(',')){
+    s=s.replace(',','.');
+  }
+  const n=Number(s);
+  return Number.isFinite(n) ? Math.max(0,n) : defaut;
+}
+function recalculerTotauxDevisV18(){
+  let totalGeneral=0;
+  devisLignesV18.forEach((l,i)=>{
+    const q=convertirNombreDevisV18(l.quantite,0);
+    const pu=convertirNombreDevisV18(l.prix_unitaire,0);
+    l.quantite=q;
+    l.prix_unitaire=pu;
+    l.prix_total=Number((q*pu).toFixed(2));
+    totalGeneral+=l.prix_total;
+    const cellule=document.getElementById('devisPrixTotal_'+i);
+    if(cellule) cellule.textContent=formatFcfaV18(l.prix_total);
+  });
+  const totalEl=document.getElementById('devisTotalGeneral');
+  if(totalEl) totalEl.textContent=formatFcfaV18(Number(totalGeneral.toFixed(2)));
+}
+function initialiserLigneDevisValeurV18(ligne){
+  return {
+    designation:String(ligne?.designation ?? ''),
+    quantite:convertirNombreDevisV18(ligne?.quantite,1),
+    prix_unitaire:convertirNombreDevisV18(ligne?.prix_unitaire,0),
+    prix_total:0
+  };
+}
 function ajouterLigneDevis(ligne={designation:'',quantite:1,prix_unitaire:0,prix_total:0}){
-  devisLignesV18.push({designation:ligne.designation||'',quantite:Number(ligne.quantite||1),prix_unitaire:Number(ligne.prix_unitaire||0),prix_total:0});
+  devisLignesV18.push(initialiserLigneDevisValeurV18(ligne));
   renderLignesDevisV18();
 }
 function supprimerLigneDevis(index){
-  if(devisLignesV18.length<=1){devisLignesV18[0]={designation:'',quantite:1,prix_unitaire:0,prix_total:0};}
-  else devisLignesV18.splice(index,1);
+  if(devisLignesV18.length<=1){
+    devisLignesV18[0]=initialiserLigneDevisValeurV18({designation:'',quantite:1,prix_unitaire:0});
+  }else{
+    devisLignesV18.splice(index,1);
+  }
   renderLignesDevisV18();
 }
 function renderLignesDevisV18(){
   const body=document.getElementById('devisLignesBody');
   if(!body)return;
   body.innerHTML=devisLignesV18.map((l,i)=>{
-    const total=Number((Number(l.quantite||0)*Number(l.prix_unitaire||0)).toFixed(2));
+    const total=Number((convertirNombreDevisV18(l.quantite,0)*convertirNombreDevisV18(l.prix_unitaire,0)).toFixed(2));
     l.prix_total=total;
-    return `<tr>
-      <td><input value="${escapeHtml(l.designation)}" oninput="modifierLigneDevisV18(${i},'designation',this.value)" style="width:100%;padding:8px;border:1px solid #ccd4df;border-radius:6px;"></td>
-      <td><input type="number" min="0" step="0.01" value="${l.quantite}" oninput="modifierLigneDevisV18(${i},'quantite',this.value)" style="width:100%;padding:8px;border:1px solid #ccd4df;border-radius:6px;"></td>
-      <td><input type="number" min="0" step="1" value="${l.prix_unitaire}" oninput="modifierLigneDevisV18(${i},'prix_unitaire',this.value)" style="width:100%;padding:8px;border:1px solid #ccd4df;border-radius:6px;"></td>
-      <td style="font-weight:bold;text-align:right;white-space:nowrap;">${formatFcfaV18(total)}</td>
+    return `<tr data-devis-row="${i}">
+      <td>
+        <input type="text" autocomplete="off" value="${escapeHtml(String(l.designation||''))}"
+          oninput="modifierLigneDevisV18(${i},'designation',this.value)"
+          placeholder="Désignation du matériel ou service"
+          style="width:100%;padding:8px;border:1px solid #ccd4df;border-radius:6px;">
+      </td>
+      <td>
+        <input type="text" inputmode="decimal" autocomplete="off" value="${String(l.quantite).replace('.',',')}"
+          oninput="modifierLigneDevisV18(${i},'quantite',this.value)"
+          onblur="normaliserChampNombreDevisV18(${i},'quantite',this)"
+          placeholder="1"
+          style="width:100%;padding:8px;border:1px solid #ccd4df;border-radius:6px;">
+      </td>
+      <td>
+        <input type="text" inputmode="decimal" autocomplete="off" value="${String(l.prix_unitaire).replace('.',',')}"
+          oninput="modifierLigneDevisV18(${i},'prix_unitaire',this.value)"
+          onblur="normaliserChampNombreDevisV18(${i},'prix_unitaire',this)"
+          placeholder="0"
+          style="width:100%;padding:8px;border:1px solid #ccd4df;border-radius:6px;">
+      </td>
+      <td id="devisPrixTotal_${i}" style="font-weight:bold;text-align:right;white-space:nowrap;">${formatFcfaV18(total)}</td>
       <td><button type="button" onclick="supprimerLigneDevis(${i})" style="background:#fde7e7;color:#b42318;padding:6px 9px;">×</button></td>
     </tr>`;
   }).join('');
-  const total=devisLignesV18.reduce((s,l)=>s+Number(l.prix_total||0),0);
-  document.getElementById('devisTotalGeneral').textContent=formatFcfaV18(total);
+  recalculerTotauxDevisV18();
 }
 function modifierLigneDevisV18(index,champ,valeur){
-  if(!devisLignesV18[index])return;
-  if(champ==='designation') devisLignesV18[index][champ]=valeur;
-  else devisLignesV18[index][champ]=Math.max(0,Number(valeur||0));
-  renderLignesDevisV18();
-  const body=document.getElementById('devisLignesBody');
-  if(body){const row=body.children[index];if(row){const inputs=row.querySelectorAll('input'); if(champ==='designation')inputs[0].focus();}}
+  const ligne=devisLignesV18[index];
+  if(!ligne)return;
+  if(champ==='designation'){
+    // Important : ne pas reconstruire le tableau à chaque frappe,
+    // sinon le curseur et le texte saisi sont perturbés.
+    ligne.designation=String(valeur ?? '');
+  }else{
+    // On conserve la saisie brute pendant la frappe et on calcule avec une valeur normalisée.
+    ligne[champ]=String(valeur ?? '');
+  }
+  const q=convertirNombreDevisV18(ligne.quantite,0);
+  const pu=convertirNombreDevisV18(ligne.prix_unitaire,0);
+  ligne.prix_total=Number((q*pu).toFixed(2));
+  const cellule=document.getElementById('devisPrixTotal_'+index);
+  if(cellule) cellule.textContent=formatFcfaV18(ligne.prix_total);
+  const totalGeneral=devisLignesV18.reduce((s,l)=>s+convertirNombreDevisV18(l.quantite,0)*convertirNombreDevisV18(l.prix_unitaire,0),0);
+  const totalEl=document.getElementById('devisTotalGeneral');
+  if(totalEl) totalEl.textContent=formatFcfaV18(Number(totalGeneral.toFixed(2)));
+}
+function normaliserChampNombreDevisV18(index,champ,input){
+  const ligne=devisLignesV18[index];
+  if(!ligne)return;
+  const n=convertirNombreDevisV18(input.value,0);
+  ligne[champ]=n;
+  input.value=String(n).replace('.',',');
+  recalculerTotauxDevisV18();
 }
 function payloadDevisV18(){
   if(!prospectSelectionne) throw new Error('Aucun prospect sélectionné.');
