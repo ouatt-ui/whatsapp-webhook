@@ -1834,6 +1834,48 @@ app.post('/crm/devis', async (req,res)=>{
   }
 });
 
+// Modification complète d'un devis existant.
+app.patch('/crm/devis/:id', async (req,res)=>{
+  let conn=null;
+  try{
+    if(!dbReady||!pool) return res.status(503).json({success:false,message:'Base MySQL non disponible.'});
+    const id=Number(req.params.id);
+    if(!id) return res.status(400).json({success:false,message:'Devis invalide.'});
+    const lignes=normaliserLignesDevis(req.body?.lignes);
+    if(!lignes.length) return res.status(400).json({success:false,message:'Ajoutez au moins une ligne au devis.'});
+
+    const [existing]=await pool.query(`SELECT id,prospect_id,numero_devis FROM devis WHERE id=? LIMIT 1`,[id]);
+    if(!existing.length) return res.status(404).json({success:false,message:'Devis introuvable.'});
+
+    const dateDevis=String(req.body?.date_devis||dateDevisDefaut()).slice(0,10);
+    const objet=String(req.body?.objet||'').trim().slice(0,255);
+    const notes=String(req.body?.notes||'').trim();
+    const total=calculerTotalDevis(lignes);
+    const statutsAutorises=['Brouillon','Envoyé','En attente','Accepté','Refusé'];
+    const statut_suivi=statutsAutorises.includes(String(req.body?.statut_suivi||'')) ? String(req.body.statut_suivi) : 'Brouillon';
+    let date_envoi=req.body?.date_envoi ? String(req.body.date_envoi).slice(0,10) : null;
+    const date_echeance=req.body?.date_echeance ? String(req.body.date_echeance).slice(0,10) : null;
+    const commentaire_suivi=String(req.body?.commentaire_suivi||'').trim();
+    if ((statut_suivi==='Envoyé' || statut_suivi==='En attente') && !date_envoi) date_envoi=new Date().toISOString().slice(0,10);
+
+    conn=await pool.getConnection();
+    await conn.beginTransaction();
+    await conn.query(`UPDATE devis SET date_devis=?,objet=?,total=?,notes=?,statut_suivi=?,date_envoi=?,date_echeance=?,commentaire_suivi=?,updated_at=NOW() WHERE id=?`,
+      [dateDevis,objet,total,notes,statut_suivi,date_envoi,date_echeance,commentaire_suivi,id]);
+    await conn.query(`DELETE FROM devis_lignes WHERE devis_id=?`,[id]);
+    for(const l of lignes){
+      await conn.query(`INSERT INTO devis_lignes(devis_id,designation,quantite,prix_unitaire,prix_total,ordre) VALUES(?,?,?,?,?,?)`,
+        [id,l.designation,l.quantite,l.prix_unitaire,l.prix_total,l.ordre]);
+    }
+    await conn.commit(); conn.release(); conn=null;
+    res.json({success:true,devis:{id,prospect_id:existing[0].prospect_id,numero_devis:existing[0].numero_devis,date_devis:dateDevis,objet,total,notes,lignes,statut_suivi,date_envoi,date_echeance,commentaire_suivi}});
+  }catch(error){
+    if(conn){try{await conn.rollback();conn.release();}catch(_) {}}
+    console.error('❌ DEVIS UPDATE :',error.message);
+    res.status(500).json({success:false,message:error.message});
+  }
+});
+
 // Liste globale des devis pour le tableau de suivi V1.9.
 app.get('/crm/devis-suivi', async (req,res)=>{
   try{
