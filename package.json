@@ -1,19 +1,16 @@
-
 {
   "name": "visionprotection-whatsapp-crm",
-  "version": "2.5.4",
-  "description": "VisionProtection WhatsApp CRM v2.5.4 + MySQL/Aiven + Robot IA",
+  "version": "1.8.0",
+  "description": "VisionProtection WhatsApp CRM V1.8 + devis + exports Excel/PDF",
   "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
-  "engines": {
-    "node": ">=18"
-  },
+  "scripts": {"start": "node index.js"},
+  "engines": {"node": ">=18"},
   "dependencies": {
     "axios": "^1.7.9",
     "express": "^4.21.2",
     "mysql2": "^3.11.5",
-    "@google/genai": "^1.0.0"
+    "@google/genai": "^1.0.0",
+    "xlsx": "^0.18.5",
+    "pdfkit": "^0.16.0"
   }
 }
