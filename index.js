@@ -2009,7 +2009,22 @@ app.post('/crm/opportunites-web/:id/ajouter-crm',async(req,res)=>{
   }finally{if(conn)conn.release();}
 });
 
-app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.4-v2.0.1",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
+app.get('/robot/web-search-diagnostic', (req,res)=>{
+  res.json({
+    success:true,
+    backend_version:'2.5.4-v2.0.2',
+    web_search_routes:true,
+    gemini_configured:Boolean(process.env.GEMINI_API_KEY && gemini),
+    database:dbReady?'mysql-connected':'memory-fallback',
+    model:webSearchHealth.model,
+    quota_blocked:webSearchQuotaActive(),
+    quota_until:webSearchHealth.quotaUntil,
+    last_error:webSearchHealth.lastError,
+    checked_at:new Date().toISOString()
+  });
+});
+
+app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.4-v2.0.2",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
 
 
 // ================== DEVIS V1.8 ==================
