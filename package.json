@@ -1,7 +1,7 @@
 {
   "name": "visionprotection-whatsapp-crm",
-  "version": "1.9.0",
-  "description": "VisionProtection WhatsApp CRM V1.9 + suivi des devis + exports Excel/PDF",
+  "version": "2.0.0",
+  "description": "VisionProtection WhatsApp CRM V2.0 + suivi des devis + Prospection Web IA Gemini/Google Search",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
