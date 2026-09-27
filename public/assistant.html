@@ -910,8 +910,22 @@ async function recommanderActionIA() {
     const response=await fetch('/robot/recommander-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:numero})});
     const data=await response.json();
     if(!response.ok||!data.success) throw new Error(data.message||'Recommandation impossible.');
-    if(out){out.style.display='block';out.textContent=typeof data.recommandation==='string'?data.recommandation:(data.recommandation?.texte||JSON.stringify(data.recommandation,null,2));}
     prospectSelectionne._recommandationV17=data.recommandation;
+    if(out){
+      out.style.display='block';
+      const r = data.recommandation;
+      if (r && typeof r === 'object') {
+        const esc = (v) => escapeHtml(String(v || '').trim());
+        out.innerHTML =
+          '<div><strong>🎯 Action à faire maintenant</strong><br>' + esc(r.action) + '</div>' +
+          '<div style="margin-top:10px"><strong>⏰ Moment conseillé</strong><br>' + esc(r.moment) + '</div>' +
+          '<div style="margin-top:10px"><strong>📌 Informations à demander</strong><br>' + esc(r.infos) + '</div>' +
+          '<div style="margin-top:10px"><strong>📝 Note commerciale proposée</strong><br>' + esc(r.note) + '</div>' +
+          '<div style="margin-top:10px"><strong>💬 Message WhatsApp conseillé</strong><div style="margin-top:5px;padding:9px;background:#f7f9fc;border-radius:7px;white-space:pre-wrap">' + esc(r.message) + '</div></div>';
+      } else {
+        out.textContent = String(r || 'Aucune recommandation disponible.');
+      }
+    }
     if(actions) actions.style.display='flex';
     if(zone) zone.textContent=data.fallback?'🟠 Recommandation générée en mode secours CRM.':'🟢 Recommandation Gemini — '+(data.model||'gemini');
   }catch(error){console.error('Erreur recommandation V1.7 :',error);if(zone)zone.textContent='❌ '+error.message;alert('❌ Recommandation impossible : '+error.message);}
@@ -920,22 +934,22 @@ async function recommanderActionIA() {
 
 function utiliserMessageV17(){
   const r=prospectSelectionne?._recommandationV17;
-  const texte=typeof r==='string'?r:'';
-  const match=texte.match(/💬 MESSAGE WHATSAPP CONSEILLÉ\s*\n([\s\S]*)/i);
-  const message=match?match[1].trim():'';
+  const message = r && typeof r === 'object' ? String(r.message || '').trim() : String(r || '').trim();
   const box=document.getElementById('messageRelance');
-  if(!box||!message){alert('Le message conseillé n’a pas pu être extrait. Vous pouvez le copier depuis la recommandation.');return;}
-  box.value=message; box.focus();
+  if(!box||!message){alert('Le message conseillé n’a pas pu être extrait.');return;}
+  box.value=message;
+  box.focus();
+  box.scrollIntoView({behavior:'smooth',block:'center'});
 }
 
 function preparerNoteV17(){
   const r=prospectSelectionne?._recommandationV17;
-  const texte=typeof r==='string'?r:'';
-  const match=texte.match(/📝 NOTE COMMERCIALE PROPOSÉE\s*\n([\s\S]*?)(?=\n(?:5\.|💬 MESSAGE WHATSAPP CONSEILLÉ)|$)/i);
-  const note=match?match[1].trim():'';
+  const note = r && typeof r === 'object' ? String(r.note || '').trim() : '';
   const box=document.getElementById('nouvelleNote');
   if(!box||!note){alert('La note proposée n’a pas pu être extraite.');return;}
-  box.value=note; box.focus();
+  box.value=note;
+  box.focus();
+  box.scrollIntoView({behavior:'smooth',block:'center'});
 }
 
 async function genererRelanceIA() {
