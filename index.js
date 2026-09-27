@@ -13,6 +13,31 @@ let geminiHealth = {
   model: "gemini-3.8-flash"
 };
 
+// Etat séparé de la prospection Web/Google Search.
+// Il évite de marteler Gemini après un 429 et protège le reste du CRM.
+let webSearchHealth = {
+  available: null,
+  lastCheck: null,
+  reason: null,
+  lastError: null,
+  quotaUntil: null,
+  searches: 0,
+  lastSearchAt: null,
+  model: "gemini-3.8-flash"
+};
+
+const WEB_SEARCH_QUOTA_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+
+function webSearchQuotaActive(){
+  return Boolean(webSearchHealth.quotaUntil && Date.now() < new Date(webSearchHealth.quotaUntil).getTime());
+}
+
+function webSearchQuotaMessage(){
+  if(!webSearchHealth.quotaUntil) return "Quota Google Search/Gemini atteint. Réessayez plus tard.";
+  const d=new Date(webSearchHealth.quotaUntil);
+  return `Quota Google Search/Gemini temporairement bloqué côté CRM jusqu'à environ ${d.toLocaleString('fr-FR')}. Aucun nouvel appel de recherche ne sera lancé avant cette échéance.`;
+}
+
 function classifyGeminiError(error) {
   const message = String(error?.message || "");
   const code = String(error?.code || error?.status || error?.response?.status || "");
@@ -1801,14 +1826,48 @@ function normalizeOpportunityRows(payload){
   })).filter(x=>x.titre&&x.url_source);
 }
 
+app.get('/robot/web-search-status', (req,res)=>{
+  const quotaActive=webSearchQuotaActive();
+  res.json({
+    success:true,
+    configured:Boolean(process.env.GEMINI_API_KEY && gemini),
+    model:webSearchHealth.model,
+    google_search_grounding:true,
+    available:quotaActive?false:webSearchHealth.available,
+    quota_blocked:quotaActive,
+    quota_until:webSearchHealth.quotaUntil,
+    reason:webSearchHealth.reason,
+    last_error:webSearchHealth.lastError,
+    last_search_at:webSearchHealth.lastSearchAt,
+    searches:webSearchHealth.searches,
+    checked_at:webSearchHealth.lastCheck,
+    message:quotaActive?webSearchQuotaMessage():(webSearchHealth.available===true?'Google Search + Gemini disponibles.':'État non encore vérifié.')
+  });
+});
+
 app.post('/robot/opportunites-web', async (req,res)=>{
+  const startedAt=new Date();
   try{
-    if(!gemini) return res.status(503).json({success:false,message:'GEMINI_API_KEY non configurée.'});
+    if(!gemini){
+      return res.status(503).json({success:false,code:'GEMINI_NOT_CONFIGURED',message:'GEMINI_API_KEY non configurée.'});
+    }
+
+    if(webSearchQuotaActive()){
+      return res.status(429).json({
+        success:false,
+        code:'WEB_SEARCH_QUOTA_COOLDOWN',
+        quota_blocked:true,
+        quota_until:webSearchHealth.quotaUntil,
+        message:webSearchQuotaMessage()
+      });
+    }
+
     const zone=String(req.body?.zone||'Côte d’Ivoire, principalement Abidjan').trim();
     const type=String(req.body?.type||'Tous').trim();
     const service=String(req.body?.service||'Tous les services VisionProtection').trim();
     const periode=String(req.body?.periode||'30 derniers jours').trim();
-    const max=Math.max(3,Math.min(20,Number(req.body?.max_results||10)));
+    // V2.0.1 : budget local volontairement prudent.
+    const max=Math.max(3,Math.min(10,Number(req.body?.max_results||5)));
     const prompt=`Tu es un agent de veille commerciale pour VisionProtection & Informatique, entreprise basée à Abidjan.
 
 OBJECTIF : utiliser Google Search pour trouver des opportunités commerciales publiques sur le web correspondant réellement aux services de VisionProtection.
@@ -1835,11 +1894,24 @@ RÈGLES IMPORTANTES :
 
 FORMAT EXACT :
 [{"type_opportunite":"APPEL_OFFRES|IMMOBILIER|PUBLIC|PRIVE|AUTRE","titre":"","organisation":"","ville":"","service":"","description":"","date_publication":"","date_limite":"","contact":"","email":"","telephone":"","url_source":"https://...","source_nom":"","pertinence":0,"resume":"Pourquoi cette page constitue une opportunité réelle et quel élément le prouve"}]`;
+
     const response=await gemini.models.generateContent({
       model:'gemini-3.8-flash',
       contents:prompt,
       config:{tools:[{googleSearch:{}}]}
     });
+
+    webSearchHealth={
+      ...webSearchHealth,
+      available:true,
+      lastCheck:new Date().toISOString(),
+      lastError:null,
+      reason:null,
+      quotaUntil:null,
+      searches:webSearchHealth.searches+1,
+      lastSearchAt:startedAt.toISOString()
+    };
+
     const parsed=extractJsonFromGemini(response.text||'');
     if(!parsed) throw new Error('Gemini a répondu, mais le format des opportunités n’a pas pu être interprété.');
     const rows=normalizeOpportunityRows(parsed).slice(0,max);
@@ -1854,10 +1926,33 @@ FORMAT EXACT :
         }catch(e){console.warn('⚠️ Opportunité non enregistrée :',e.message);}
       }
     }
-    res.json({success:true,count:rows.length,saved,opportunites:rows,model:'gemini-3.8-flash',search_grounding:true,generated_at:new Date().toISOString()});
+    res.json({success:true,count:rows.length,saved,opportunites:rows,model:'gemini-3.8-flash',search_grounding:true,generated_at:new Date().toISOString(),searches_used:webSearchHealth.searches});
   }catch(e){
-    console.error('❌ PROSPECTION WEB IA :',e.message);
-    res.status(500).json({success:false,message:e.message});
+    const typeError=classifyGeminiError(e);
+    const msg=String(e?.message||e);
+    console.error('❌ PROSPECTION WEB IA :',msg);
+
+    if(typeError==='QUOTA' || /resource_exhausted|quota|rate.?limit|too many requests/i.test(msg)){
+      const until=new Date(Date.now()+WEB_SEARCH_QUOTA_COOLDOWN_MS).toISOString();
+      webSearchHealth={
+        ...webSearchHealth,
+        available:false,
+        lastCheck:new Date().toISOString(),
+        reason:'QUOTA',
+        lastError:msg,
+        quotaUntil:until
+      };
+      return res.status(429).json({
+        success:false,
+        code:'WEB_SEARCH_QUOTA',
+        quota_blocked:true,
+        quota_until:until,
+        message:'⚠️ Quota Gemini atteint pour la prospection Web. Le CRM bloque automatiquement les nouvelles recherches pendant quelques heures afin d’éviter de consommer davantage de quota. Le chatbot, les prospects et les devis continuent de fonctionner.'
+      });
+    }
+
+    webSearchHealth={...webSearchHealth,available:false,lastCheck:new Date().toISOString(),reason:typeError,lastError:msg};
+    res.status(500).json({success:false,code:'WEB_SEARCH_ERROR',message:msg});
   }
 });
 
@@ -1914,7 +2009,7 @@ app.post('/crm/opportunites-web/:id/ajouter-crm',async(req,res)=>{
   }finally{if(conn)conn.release();}
 });
 
-app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.4-v2.0",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
+app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.4-v2.0.1",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
 
 
 // ================== DEVIS V1.8 ==================
