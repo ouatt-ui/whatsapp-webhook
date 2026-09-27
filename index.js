@@ -287,6 +287,30 @@ await pool.query(`
    CONSTRAINT fk_devis_lignes_devis FOREIGN KEY(devis_id) REFERENCES devis(id) ON DELETE CASCADE
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
 
+  await pool.query(`CREATE TABLE IF NOT EXISTS opportunites_web(
+   id BIGINT AUTO_INCREMENT PRIMARY KEY,
+   type_opportunite VARCHAR(50) NOT NULL DEFAULT 'AUTRE',
+   titre VARCHAR(500) NOT NULL,
+   organisation VARCHAR(255),
+   ville VARCHAR(150),
+   service VARCHAR(255),
+   description TEXT,
+   date_publication VARCHAR(50),
+   date_limite VARCHAR(100),
+   contact VARCHAR(255),
+   email VARCHAR(255),
+   telephone VARCHAR(100),
+   url_source TEXT,
+   source_nom VARCHAR(255),
+   pertinence INT DEFAULT 0,
+   statut VARCHAR(40) NOT NULL DEFAULT 'NOUVELLE',
+   resume TEXT,
+   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+   UNIQUE KEY uq_opportunite_url(url_source(500)),
+   INDEX idx_opportunite_statut(statut),
+   INDEX idx_opportunite_date(date_limite)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
   // ================== SUIVI DEVIS V1.9 ==================
   // Migration non destructive : ajoute les champs de suivi si la table existe déjà.
   const migrationsDevisV19 = [
@@ -1734,7 +1758,163 @@ try {
 });
 
 // ================== FIN ROBOT IA COMMERCIAL ==================
-app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.4-v1.8",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
+// ================== PROSPECTION WEB IA V2.0 ==================
+function cleanOpportunityUrl(value){
+  const u=String(value||'').trim();
+  return /^https?:\/\//i.test(u)?u:'';
+}
+function normalizeOpportunityType(v){
+  const x=String(v||'').toUpperCase();
+  if(x.includes('APPEL')||x.includes('OFFRE')||x.includes('MARCHE')) return 'APPEL_OFFRES';
+  if(x.includes('IMMOB')) return 'IMMOBILIER';
+  if(x.includes('PUBLIC')) return 'PUBLIC';
+  if(x.includes('PRIV')) return 'PRIVE';
+  return 'AUTRE';
+}
+function extractJsonFromGemini(text){
+  const raw=String(text||'').trim();
+  try{return JSON.parse(raw);}catch(_){ }
+  const fenced=raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if(fenced){try{return JSON.parse(fenced[1]);}catch(_){ }}
+  const start=raw.indexOf('['), end=raw.lastIndexOf(']');
+  if(start>=0&&end>start){try{return JSON.parse(raw.slice(start,end+1));}catch(_){ }}
+  return null;
+}
+function normalizeOpportunityRows(payload){
+  const rows=Array.isArray(payload)?payload:(Array.isArray(payload?.opportunites)?payload.opportunites:[]);
+  return rows.map(x=>({
+    type_opportunite:normalizeOpportunityType(x?.type_opportunite||x?.type),
+    titre:String(x?.titre||x?.title||'Opportunité sans titre').trim().slice(0,500),
+    organisation:String(x?.organisation||x?.entreprise||x?.organization||'').trim().slice(0,255),
+    ville:String(x?.ville||x?.city||'').trim().slice(0,150),
+    service:String(x?.service||x?.besoin||'').trim().slice(0,255),
+    description:String(x?.description||x?.besoin_detail||'').trim(),
+    date_publication:String(x?.date_publication||x?.published_at||'').trim().slice(0,50),
+    date_limite:String(x?.date_limite||x?.deadline||'').trim().slice(0,100),
+    contact:String(x?.contact||'').trim().slice(0,255),
+    email:String(x?.email||'').trim().slice(0,255),
+    telephone:String(x?.telephone||x?.phone||'').trim().slice(0,100),
+    url_source:cleanOpportunityUrl(x?.url_source||x?.url||x?.source_url),
+    source_nom:String(x?.source_nom||x?.source||'Google Search').trim().slice(0,255),
+    pertinence:Math.max(0,Math.min(100,Number(x?.pertinence??x?.score??0)||0)),
+    resume:String(x?.resume||x?.summary||x?.evidence||'').trim()
+  })).filter(x=>x.titre&&x.url_source);
+}
+
+app.post('/robot/opportunites-web', async (req,res)=>{
+  try{
+    if(!gemini) return res.status(503).json({success:false,message:'GEMINI_API_KEY non configurée.'});
+    const zone=String(req.body?.zone||'Côte d’Ivoire, principalement Abidjan').trim();
+    const type=String(req.body?.type||'Tous').trim();
+    const service=String(req.body?.service||'Tous les services VisionProtection').trim();
+    const periode=String(req.body?.periode||'30 derniers jours').trim();
+    const max=Math.max(3,Math.min(20,Number(req.body?.max_results||10)));
+    const prompt=`Tu es un agent de veille commerciale pour VisionProtection & Informatique, entreprise basée à Abidjan.
+
+OBJECTIF : utiliser Google Search pour trouver des opportunités commerciales publiques sur le web correspondant réellement aux services de VisionProtection.
+
+ZONE : ${zone}
+TYPE RECHERCHÉ : ${type}
+SERVICES : ${service}
+PÉRIODE : ${periode}
+NOMBRE MAXIMUM : ${max}
+
+Services VisionProtection : vidéosurveillance/CCTV, contrôle d'accès, alarmes intrusion, SSI/CMSI et sécurité incendie, motorisation de portail, domotique, clôture électrique, réseaux informatiques, fibre/VLAN/Wi-Fi, maintenance et intégration de systèmes de sécurité.
+
+RECHERCHE : appels d'offres, avis de consultation, demandes de cotation, marchés, recherche de prestataires, projets immobiliers nécessitant des équipements ou services, entreprises recherchant un intégrateur/prestataire, organismes publics ou privés publiant un besoin réel.
+
+RÈGLES IMPORTANTES :
+- Recherche sur le web avec Google Search et privilégie les pages réellement accessibles.
+- Ne transforme pas une simple fiche d'entreprise en opportunité : il faut un besoin, projet, consultation, marché ou recherche de prestataire identifiable.
+- Ne fabrique aucune date limite, personne, téléphone, email, prix ou URL.
+- Si une information n'est pas trouvée, laisse le champ vide.
+- Pour chaque résultat, conserve l'URL exacte de la page source.
+- Évite les doublons.
+- Classe la pertinence de 0 à 100 selon la correspondance technique avec VisionProtection et le caractère concret du besoin.
+- Réponds UNIQUEMENT avec un tableau JSON valide, sans Markdown.
+
+FORMAT EXACT :
+[{"type_opportunite":"APPEL_OFFRES|IMMOBILIER|PUBLIC|PRIVE|AUTRE","titre":"","organisation":"","ville":"","service":"","description":"","date_publication":"","date_limite":"","contact":"","email":"","telephone":"","url_source":"https://...","source_nom":"","pertinence":0,"resume":"Pourquoi cette page constitue une opportunité réelle et quel élément le prouve"}]`;
+    const response=await gemini.models.generateContent({
+      model:'gemini-3.8-flash',
+      contents:prompt,
+      config:{tools:[{googleSearch:{}}]}
+    });
+    const parsed=extractJsonFromGemini(response.text||'');
+    if(!parsed) throw new Error('Gemini a répondu, mais le format des opportunités n’a pas pu être interprété.');
+    const rows=normalizeOpportunityRows(parsed).slice(0,max);
+    let saved=0;
+    if(dbReady&&pool){
+      for(const o of rows){
+        try{
+          const [r]=await pool.query(`INSERT INTO opportunites_web(type_opportunite,titre,organisation,ville,service,description,date_publication,date_limite,contact,email,telephone,url_source,source_nom,pertinence,statut,resume)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'NOUVELLE',?)
+          ON DUPLICATE KEY UPDATE titre=VALUES(titre),organisation=VALUES(organisation),ville=VALUES(ville),service=VALUES(service),description=VALUES(description),date_publication=VALUES(date_publication),date_limite=VALUES(date_limite),contact=VALUES(contact),email=VALUES(email),telephone=VALUES(telephone),source_nom=VALUES(source_nom),pertinence=VALUES(pertinence),resume=VALUES(resume),updated_at=CURRENT_TIMESTAMP`,[o.type_opportunite,o.titre,o.organisation,o.ville,o.service,o.description,o.date_publication,o.date_limite,o.contact,o.email,o.telephone,o.url_source,o.source_nom,o.pertinence,o.resume]);
+          if(r.affectedRows) saved++;
+        }catch(e){console.warn('⚠️ Opportunité non enregistrée :',e.message);}
+      }
+    }
+    res.json({success:true,count:rows.length,saved,opportunites:rows,model:'gemini-3.8-flash',search_grounding:true,generated_at:new Date().toISOString()});
+  }catch(e){
+    console.error('❌ PROSPECTION WEB IA :',e.message);
+    res.status(500).json({success:false,message:e.message});
+  }
+});
+
+app.get('/crm/opportunites-web',async(req,res)=>{
+  try{
+    if(!dbReady||!pool) return res.json({success:true,opportunites:[],database:'memory-fallback'});
+    const statut=String(req.query.statut||'').trim();
+    const limit=Math.max(1,Math.min(100,Number(req.query.limit||50)));
+    const sql=statut?`SELECT * FROM opportunites_web WHERE statut=? ORDER BY pertinence DESC,created_at DESC LIMIT ${limit}`:`SELECT * FROM opportunites_web ORDER BY pertinence DESC,created_at DESC LIMIT ${limit}`;
+    const [rows]=await pool.query(sql,statut?[statut]:[]);
+    res.json({success:true,count:rows.length,opportunites:rows,database:'mysql'});
+  }catch(e){res.status(500).json({success:false,message:e.message});}
+});
+
+app.patch('/crm/opportunites-web/:id',async(req,res)=>{
+  try{
+    if(!dbReady||!pool) return res.status(503).json({success:false,message:'Base MySQL non disponible.'});
+    const id=Number(req.params.id);
+    const statut=String(req.body?.statut||'').trim();
+    if(!id||!['NOUVELLE','A_VERIFIER','AJOUTEE_CRM','IGNOREE','EXPIREE'].includes(statut)) return res.status(400).json({success:false,message:'Identifiant ou statut invalide.'});
+    await pool.query('UPDATE opportunites_web SET statut=?,updated_at=CURRENT_TIMESTAMP WHERE id=?',[statut,id]);
+    res.json({success:true,message:'Statut de l’opportunité mis à jour.'});
+  }catch(e){res.status(500).json({success:false,message:e.message});}
+});
+
+app.post('/crm/opportunites-web/:id/ajouter-crm',async(req,res)=>{
+  const conn=await pool?.getConnection();
+  try{
+    if(!dbReady||!pool||!conn) return res.status(503).json({success:false,message:'Base MySQL non disponible.'});
+    const id=Number(req.params.id);
+    if(!id) return res.status(400).json({success:false,message:'Opportunité invalide.'});
+    const [rows]=await conn.query('SELECT * FROM opportunites_web WHERE id=? LIMIT 1',[id]);
+    if(!rows.length) return res.status(404).json({success:false,message:'Opportunité introuvable.'});
+    const o=rows[0];
+    const wa=String(req.body?.telephone||o.telephone||'').replace(/[^\d]/g,'');
+    const phone=wa||('WEB-'+id);
+    const whatsappId=wa?normalizeForApi(wa):phone;
+    const [existing]=await conn.query('SELECT id FROM prospects WHERE whatsapp_id=? LIMIT 1',[whatsappId]);
+    let prospectId;
+    if(existing.length){
+      prospectId=existing[0].id;
+      await conn.query(`UPDATE prospects SET nom=COALESCE(NULLIF(?,'') ,nom),entreprise=COALESCE(NULLIF(?,'') ,entreprise),telephone=COALESCE(NULLIF(?,'') ,telephone),ville=COALESCE(NULLIF(?,'') ,ville),service=COALESCE(NULLIF(?,'') ,service),besoin=COALESCE(NULLIF(?,'') ,besoin),updated_at=CURRENT_TIMESTAMP WHERE id=?`,[o.contact||'',o.organisation||'',o.telephone||'',o.ville||'',o.service||'',o.description||o.titre,prospectId]);
+    }else{
+      const [ins]=await conn.query(`INSERT INTO prospects(whatsapp_id,nom,telephone,entreprise,ville,service,besoin,statut,etat_conversation) VALUES(?,?,?,?,?,?,?,?,?)`,[whatsappId,o.contact||o.organisation||'Opportunité web',o.telephone||null,o.organisation||null,o.ville||null,o.service||null,(o.description||o.titre||'').slice(0,5000),'Nouveau','TERMINE']);
+      prospectId=ins.insertId;
+    }
+    const note=[`🔎 Opportunité trouvée par VisionProspect IA`,o.titre,o.resume?`Résumé : ${o.resume}`:'',o.url_source?`Source : ${o.url_source}`:'',o.date_limite?`Date limite : ${o.date_limite}`:''].filter(Boolean).join('\n');
+    await conn.query('INSERT INTO notes_commerciales(prospect_id,note,auteur) VALUES(?,?,?)',[prospectId,note,'VisionProspect IA']);
+    await conn.query('UPDATE opportunites_web SET statut=\'AJOUTEE_CRM\',updated_at=CURRENT_TIMESTAMP WHERE id=?',[id]);
+    res.json({success:true,prospect_id:prospectId,message:'Opportunité ajoutée au CRM.',telephone:o.telephone||'',whatsapp_id:whatsappId});
+  }catch(e){
+    console.error('❌ AJOUT OPPORTUNITÉ CRM :',e.message);
+    res.status(500).json({success:false,message:e.message});
+  }finally{if(conn)conn.release();}
+});
+
+app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.4-v2.0",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
 
 
 // ================== DEVIS V1.8 ==================
