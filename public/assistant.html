@@ -477,6 +477,33 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
       <div id="statutHistoriqueV16" style="margin-top:8px;color:#667085;font-size:12px;"></div>
     </div>
 
+    <!-- ASSISTANT D'ACTION COMMERCIALE V1.7 -->
+    <div style="
+      margin:0 20px 20px;
+      padding:16px;
+      background:#f0fdf4;
+      border:1px solid #bbf7d0;
+      border-radius:10px;
+    ">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div style="font-size:14px;font-weight:bold;">🎯 Assistant d'action commerciale V1.7</div>
+        <button type="button" onclick="obtenirRecommandationV17()" style="background:#15803d;color:white;">
+          🧭 Recommander la prochaine action
+        </button>
+      </div>
+      <div id="statutActionV17" style="margin-top:10px;color:#667085;font-size:13px;">
+        L'assistant analyse le statut, l'historique et les notes pour proposer la prochaine action commerciale.
+      </div>
+      <div id="actionV17" style="display:none;margin-top:12px;padding:12px;background:white;border:1px solid #d7eadb;border-radius:8px;white-space:pre-wrap;font-size:13px;line-height:1.5;"></div>
+      <div id="actionsBoutonsV17" style="display:none;margin-top:10px;gap:8px;flex-wrap:wrap;">
+        <button type="button" onclick="utiliserMessageV17()" style="background:#198754;color:white;">💬 Utiliser le message conseillé</button>
+        <button type="button" onclick="preparerNoteV17()" style="background:#0b3d91;color:white;">📝 Préparer la note commerciale</button>
+      </div>
+      <div style="margin-top:8px;color:#667085;font-size:12px;">
+        Validation humaine obligatoire : aucune action ni aucun envoi automatique n'est effectué.
+      </div>
+    </div>
+
     <!-- NOTES COMMERCIALES -->
     <div style="
       margin:0 20px 20px;
@@ -881,6 +908,107 @@ async function analyserHistoriqueIA() {
   }
 }
 
+
+async function obtenirRecommandationV17() {
+  if (!prospectSelectionne) {
+    alert("Aucun prospect sélectionné.");
+    return;
+  }
+
+  const numero = prospectSelectionne.telephone || prospectSelectionne.whatsapp_id;
+  const statutZone = document.getElementById("statutActionV17");
+  const actionZone = document.getElementById("actionV17");
+  const boutonsZone = document.getElementById("actionsBoutonsV17");
+  const bouton = Array.from(document.querySelectorAll('#prospectModal button'))
+    .find(b => (b.textContent || '').includes("Recommander la prochaine action"));
+
+  if (!numero) {
+    if (statutZone) statutZone.textContent = "❌ Numéro du prospect introuvable.";
+    return;
+  }
+
+  if (bouton) bouton.disabled = true;
+  if (statutZone) statutZone.textContent = "⏳ Analyse V1.7 : recherche de la prochaine action...";
+  if (actionZone) {
+    actionZone.style.display = "none";
+    actionZone.textContent = "";
+  }
+  if (boutonsZone) boutonsZone.style.display = "none";
+
+  try {
+    const response = await fetch("/robot/recommandation-action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: numero })
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || "Impossible de générer la recommandation.");
+    }
+
+    prospectSelectionne._actionV17 = data;
+
+    const texte = [
+      "🎯 ACTION À FAIRE MAINTENANT",
+      data.action || "Non définie",
+      "",
+      "⏰ MOMENT CONSEILLÉ",
+      data.moment || "À déterminer",
+      "",
+      "📌 INFORMATIONS À DEMANDER",
+      data.questions || "Aucune question particulière.",
+      "",
+      "📝 NOTE COMMERCIALE PROPOSÉE",
+      data.note_suggeree || "Aucune note proposée.",
+      "",
+      "💬 MESSAGE CONSEILLÉ",
+      data.message_suggere || "Aucun message proposé."
+    ].join("\n");
+
+    if (actionZone) {
+      actionZone.style.display = "block";
+      actionZone.textContent = texte;
+    }
+    if (boutonsZone) boutonsZone.style.display = "flex";
+    if (statutZone) {
+      statutZone.textContent = data.fallback
+        ? "🟠 Recommandation générée en mode secours CRM."
+        : `🟢 Recommandation Gemini — ${data.model || 'gemini-3.8-flash'}`;
+    }
+  } catch (error) {
+    console.error("Erreur recommandation V1.7 :", error);
+    if (statutZone) statutZone.textContent = "❌ " + error.message;
+    alert("❌ Recommandation impossible : " + error.message);
+  } finally {
+    if (bouton) bouton.disabled = false;
+  }
+}
+
+function utiliserMessageV17() {
+  const data = prospectSelectionne?._actionV17;
+  if (!data || !data.message_suggere) {
+    alert("Générez d'abord la recommandation V1.7.");
+    return;
+  }
+  const textarea = document.getElementById("messageRelance");
+  if (textarea) textarea.value = data.message_suggere;
+  prospectSelectionne._messageRelance = data.message_suggere;
+  const zone = document.getElementById("statutRelanceIA");
+  if (zone) zone.textContent = "🟢 Message conseillé V1.7 chargé. Vous pouvez le modifier avant tout envoi.";
+  textarea?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function preparerNoteV17() {
+  const data = prospectSelectionne?._actionV17;
+  if (!data || !data.note_suggeree) {
+    alert("Générez d'abord la recommandation V1.7.");
+    return;
+  }
+  const textarea = document.getElementById("nouvelleNote");
+  if (textarea) textarea.value = data.note_suggeree;
+  textarea?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
 async function genererRelanceIA() {
   if (!prospectSelectionne) {
     alert("Aucun prospect sélectionné.");
@@ -998,27 +1126,19 @@ function ouvrirProspectObjet(prospect) {
   const modal = document.getElementById("prospectModal");
   if (modal) modal.classList.add("show");
 
-  // Réinitialiser l'analyse V1.6 à chaque ouverture de fiche.
-  const resumeV16 = document.getElementById("resumeHistoriqueV16");
-  const analyseV16 = document.getElementById("analyseHistoriqueV16");
-  const statutV16 = document.getElementById("statutHistoriqueV16");
-  if (resumeV16) {
-    resumeV16.textContent = "Cliquez sur « Analyser l'historique » pour examiner les échanges et les notes commerciales de ce prospect.";
-  }
-  if (analyseV16) {
-    analyseV16.style.display = "none";
-    analyseV16.textContent = "";
-  }
-  if (statutV16) {
-    statutV16.textContent = "";
-  }
+  prospectSelectionne._actionV17 = null;
+  const actionZoneV17 = document.getElementById("actionV17");
+  const actionButtonsV17 = document.getElementById("actionsBoutonsV17");
+  const actionStatusV17 = document.getElementById("statutActionV17");
+  if (actionZoneV17) { actionZoneV17.style.display = "none"; actionZoneV17.textContent = ""; }
+  if (actionButtonsV17) actionButtonsV17.style.display = "none";
+  if (actionStatusV17) actionStatusV17.textContent = "L'assistant analyse le statut, l'historique et les notes pour proposer la prochaine action commerciale.";
 
   const setText = (id, value) => {
     const el = document.getElementById(id);
     if (el) el.textContent = value || "—";
   };
 
-  setText("modalNom", prospect.nom || "Prospect");
   setText("modalTelephone", prospect.telephone || prospect.whatsapp_id);
   setText("modalWhatsapp", prospect.whatsapp_id || prospect.telephone);
   setText("modalEntreprise", prospect.entreprise);
@@ -1205,11 +1325,45 @@ async function ouvrirProspect(id) {
     return;
   }
 
-  // Ouverture centralisée de la fiche prospect.
-  ouvrirProspectObjet(prospect);
-}
+  prospectSelectionne = prospect;
 
-async function chargerNotes() {
+  document.getElementById("modalNom").textContent =
+    prospect.nom || "Prospect";
+
+  document.getElementById("modalTelephone").textContent =
+    prospect.telephone || "—";
+
+  document.getElementById("modalWhatsapp").textContent =
+    prospect.whatsapp_id || "—";
+
+  document.getElementById("modalEntreprise").textContent =
+    prospect.entreprise || "—";
+
+  document.getElementById("modalVille").textContent =
+    prospect.ville || "—";
+
+  document.getElementById("modalService").textContent =
+    prospect.service || "Non défini";
+
+  document.getElementById("modalStatut").value =
+    prospect.statut || "Nouveau";
+
+  document.getElementById("modalBesoin").textContent =
+    prospect.besoin || "—";
+
+  document.getElementById("modalCreated").textContent =
+    formaterDate(prospect.created_at);
+
+  document.getElementById("modalUpdated").textContent =
+    formaterDate(prospect.updated_at);
+
+  
+}
+document
+  .getElementById("prospectModal")
+  .classList.add("show");
+
+chargerNotes();async function chargerNotes() {
 
   const container = document.getElementById("listeNotes");
 
