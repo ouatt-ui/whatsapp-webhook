@@ -1827,15 +1827,40 @@ app.post('/crm/devis/export/excel', async (req,res)=>{
     rows.push(['','','TOTAL GÉNÉRAL (FCFA)',d.total]);
     if(d.objet) rows.push(['Objet',d.objet]);
     if(d.notes) rows.push(['Notes',d.notes]);
-    const ws=XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols']=[{wch:42},{wch:14},{wch:22},{wch:22}];
-    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Devis');
-    const buffer=XLSX.write(wb,{type:'buffer',bookType:'xlsx'});
-    const filename=`${d.numero_devis||'DEVIS'}-${String(d.prospect.nom||'prospect').replace(/[^a-z0-9_-]/gi,'_')}.xlsx`;
-    res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition',`attachment; filename="${filename}"`);
-    res.send(buffer);
-  }catch(error){console.error('❌ DEVIS EXCEL :',error.message);res.status(500).json({success:false,message:error.message});}
+    const filenameBase=`${d.numero_devis||'DEVIS'}-${String(d.prospect.nom||'prospect').replace(/[^a-z0-9_-]/gi,'_')}`;
+
+    // Export XLSX principal. On vérifie explicitement la présence de XLSX afin
+    // d'éviter un téléchargement vide ou une réponse JSON à la place du fichier.
+    if (typeof XLSX !== 'undefined') {
+      const ws=XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols']=[{wch:42},{wch:14},{wch:22},{wch:22}];
+      const wb=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb,ws,'Devis');
+      const buffer=XLSX.write(wb,{type:'buffer',bookType:'xlsx',compression:true});
+
+      if (!buffer || !buffer.length) {
+        throw new Error('Le fichier Excel généré est vide.');
+      }
+
+      res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition',`attachment; filename="${filenameBase}.xlsx"`);
+      res.setHeader('Content-Length',String(buffer.length));
+      return res.end(buffer);
+    }
+
+    // Secours Excel compatible : CSV UTF-8 avec BOM, lisible directement dans Excel.
+    const csvRows=rows.map(row=>row.map(v=>{
+      const value=String(v ?? '');
+      return /[\";,\n]/.test(value) ? '"'+value.replace(/"/g,'""')+'"' : value;
+    }).join(';'));
+    const csv='\uFEFF'+csvRows.join('\r\n');
+    res.setHeader('Content-Type','text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition',`attachment; filename="${filenameBase}.csv"`);
+    return res.end(csv,'utf8');
+  }catch(error){
+    console.error('❌ DEVIS EXCEL :',error.stack||error.message);
+    res.status(500).json({success:false,message:'Export Excel impossible : '+error.message});
+  }
 });
 
 app.post('/crm/devis/export/pdf', async (req,res)=>{
