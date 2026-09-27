@@ -254,7 +254,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 <section class="panel" id="prospectionWebV20">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
     <div>
-      <h2 style="margin:0">🔎 Prospection Web IA — V2.0.1</h2>
+      <h2 style="margin:0">🔎 Prospection Web IA — V2.0.2</h2>
       <div style="font-size:12px;color:#667085;margin-top:5px;">Gemini + Google Search pour détecter des opportunités publiques. Validation humaine avant ajout au CRM.</div>
     </div>
     <span id="webProspectionStatus" class="ia-status-pill">Prêt</span>
@@ -729,9 +729,49 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 let prospects=[],stats={},relancesDetectees=[];
 
 async function api(url){
- const r=await fetch(url);
- if(!r.ok)throw new Error("HTTP "+r.status);
- return r.json();
+ const r=await fetch(url,{cache:'no-store',headers:{'Accept':'application/json'}});
+ const text=await r.text();
+ let data=null;
+ try{data=text?JSON.parse(text):null;}catch(e){}
+ if(!r.ok){
+   const detail=data?.message||data?.error||text.slice(0,180)||('HTTP '+r.status);
+   throw new Error('HTTP '+r.status+' — '+detail);
+ }
+ if(data===null)throw new Error('Réponse serveur non JSON. Vérifiez le déploiement Render.');
+ return data;
+}
+
+async function fetchJsonV202(url,options={}){
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),15000);
+  try{
+    const r=await fetch(url,{...options,cache:'no-store',signal:controller.signal,headers:{Accept:'application/json',...(options.headers||{})}});
+    const text=await r.text();
+    let data=null;
+    try{data=text?JSON.parse(text):null;}catch(e){}
+    if(!r.ok){
+      const detail=data?.message||data?.error||text.slice(0,220)||('HTTP '+r.status);
+      const err=new Error('HTTP '+r.status+' — '+detail); err.code=data?.code; err.quota_until=data?.quota_until; throw err;
+    }
+    if(data===null)throw new Error('Réponse serveur non JSON. Le backend V2.0.2 n’est probablement pas déployé sur Render.');
+    return data;
+  }catch(e){
+    if(e?.name==='AbortError')throw new Error('Délai dépassé : le serveur Render ne répond pas.');
+    if(e?.message==='Failed to fetch')throw new Error('Connexion au backend impossible. Vérifiez que Render est bien en ligne et que index.js V2.0.2 est déployé.');
+    throw e;
+  }finally{clearTimeout(timer);}
+}
+
+async function verifierBackendV202(){
+  const zone=document.getElementById('webProspectionInfo');
+  try{
+    const d=await fetchJsonV202('/robot/web-search-diagnostic');
+    if(d.backend_version!=='2.5.4-v2.0.2')throw new Error('Backend détecté : '+(d.backend_version||'inconnu')+'. Déployez index.js V2.0.2.');
+    return true;
+  }catch(e){
+    if(zone)zone.innerHTML='⚠️ <strong>Diagnostic backend :</strong> '+escapeHtml(e.message);
+    return false;
+  }
 }
 
 async function loadData() {
@@ -1890,9 +1930,8 @@ async function verifierEtatGoogleSearchV201(){
   const zone=document.getElementById('webSearchHealthV201');
   if(zone)zone.textContent='⏳ Vérification de l’état Gemini/Google Search...';
   try{
-    const r=await fetch('/robot/web-search-status');
-    const d=await r.json();
-    if(!r.ok||!d.success)throw new Error(d.message||'État indisponible.');
+    const d=await fetchJsonV202('/robot/web-search-status');
+    if(!d.success)throw new Error(d.message||'État indisponible.');
     if(d.quota_blocked){
       if(zone){zone.style.background='#fff4db';zone.style.color='#8a5a00';zone.innerHTML='🔴 <strong>Google Search bloqué temporairement</strong> — quota atteint. '+escapeHtml(d.message||'Réessayez plus tard.')+' <span style="opacity:.8">Recherches effectuées depuis le démarrage : '+Number(d.searches||0)+'</span>';}
     }else if(d.available===true){
@@ -1911,7 +1950,7 @@ async function rechercherOpportunitesWebV20(){
   const btns=document.querySelectorAll('#prospectionWebV20 button');
   btns.forEach(b=>b.disabled=true);
   if(status){status.className='ia-status-pill';status.textContent='⏳ Recherche web...';}
-  if(info)info.textContent='Gemini utilise Google Search pour rechercher et qualifier les opportunités. Budget local V2.0.1 : maximum 10 résultats, 5 par défaut.';
+  if(info)info.textContent='Gemini utilise Google Search pour rechercher et qualifier les opportunités. Budget local V2.0.2 : maximum 10 résultats, 5 par défaut.';
   try{
     const body={
       zone:document.getElementById('webZone')?.value||'',
@@ -1920,12 +1959,8 @@ async function rechercherOpportunitesWebV20(){
       periode:document.getElementById('webPeriode')?.value||'30 derniers jours',
       max_results:Number(document.getElementById('webMax')?.value||5)
     };
-    const r=await fetch('/robot/opportunites-web',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    const data=await r.json();
-    if(!r.ok||!data.success){
-      const err=new Error(data.message||'Recherche impossible.');
-      err.code=data.code;err.quota_until=data.quota_until;throw err;
-    }
+    const data=await fetchJsonV202('/robot/opportunites-web',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!data.success)throw new Error(data.message||'Recherche impossible.');
     opportunitesWebV20=data.opportunites||[];
     renderOpportunitesWebV20(opportunitesWebV20);
     if(status){status.className='ia-status-pill ok';status.textContent='🟢 Recherche terminée';}
@@ -1960,9 +1995,8 @@ async function chargerOpportunitesWebV20(){
 async function changerStatutOpportuniteV20(id,statut){
   if(!id)return;
   try{
-    const r=await fetch('/crm/opportunites-web/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({statut})});
-    const data=await r.json();
-    if(!r.ok||!data.success)throw new Error(data.message||'Mise à jour impossible.');
+    const data=await fetchJsonV202('/crm/opportunites-web/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({statut})});
+    if(!data.success)throw new Error(data.message||'Mise à jour impossible.');
     await chargerOpportunitesWebV20();
   }catch(error){alert('❌ '+error.message);}
 }
@@ -1972,9 +2006,8 @@ async function ajouterOpportuniteAuCrmV20(id,index){
   const ok=confirm('Ajouter cette opportunité au CRM comme nouveau prospect ?\n\n'+(o.organisation||o.titre));
   if(!ok)return;
   try{
-    const r=await fetch('/crm/opportunites-web/'+id+'/ajouter-crm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({telephone:o.telephone||''})});
-    const data=await r.json();
-    if(!r.ok||!data.success)throw new Error(data.message||'Ajout au CRM impossible.');
+    const data=await fetchJsonV202('/crm/opportunites-web/'+id+'/ajouter-crm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({telephone:o.telephone||''})});
+    if(!data.success)throw new Error(data.message||'Ajout au CRM impossible.');
     alert('✅ Opportunité ajoutée au CRM.\n\nProspect ID : '+data.prospect_id+'\n\nLa source a été enregistrée dans une note commerciale.');
     await chargerOpportunitesWebV20();
     await loadData();
@@ -2377,8 +2410,7 @@ function escapeHtml(s){return String(s).replaceAll("&","&amp;").replaceAll("<","
 loadData();
 loadDashboardV14();
 chargerSuiviDevisV19();
-chargerOpportunitesWebV20();
-verifierEtatGoogleSearchV201();
+verifierBackendV202().then(()=>{chargerOpportunitesWebV20();verifierEtatGoogleSearchV201();});
 </script>
 </body>
 </html>
