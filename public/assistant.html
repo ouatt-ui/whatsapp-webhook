@@ -250,6 +250,50 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
   </div>
 </section>
 
+
+<section class="panel" id="prospectionWebV20">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+    <div>
+      <h2 style="margin:0">🔎 Prospection Web IA — V2.0</h2>
+      <div style="font-size:12px;color:#667085;margin-top:5px;">Gemini + Google Search pour détecter des opportunités publiques. Validation humaine avant ajout au CRM.</div>
+    </div>
+    <span id="webProspectionStatus" class="ia-status-pill">Prêt</span>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px;">
+    <label style="font-size:12px;color:#667085;">Zone
+      <input id="webZone" value="Côte d’Ivoire, principalement Abidjan" style="width:100%;padding:9px;border:1px solid #ccd4df;border-radius:7px;">
+    </label>
+    <label style="font-size:12px;color:#667085;">Type
+      <select id="webType" style="width:100%;padding:9px;border:1px solid #ccd4df;border-radius:7px;background:white;">
+        <option>Tous</option><option>Appels d’offres</option><option>Immobilier</option><option>Public</option><option>Privé</option>
+      </select>
+    </label>
+    <label style="font-size:12px;color:#667085;">Service
+      <select id="webService" style="width:100%;padding:9px;border:1px solid #ccd4df;border-radius:7px;background:white;">
+        <option>Tous les services VisionProtection</option>
+        <option>Vidéosurveillance / CCTV</option><option>Contrôle d’accès</option><option>Alarme intrusion</option><option>SSI / CMSI / sécurité incendie</option><option>Motorisation de portail</option><option>Domotique</option><option>Réseau informatique / fibre / VLAN / Wi-Fi</option><option>Clôture électrique</option><option>Maintenance</option>
+      </select>
+    </label>
+    <label style="font-size:12px;color:#667085;">Période
+      <select id="webPeriode" style="width:100%;padding:9px;border:1px solid #ccd4df;border-radius:7px;background:white;">
+        <option>7 derniers jours</option><option selected>30 derniers jours</option><option>90 derniers jours</option><option>Sans restriction de période</option>
+      </select>
+    </label>
+  </div>
+
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px;">
+    <label style="font-size:12px;color:#667085;">Nombre max
+      <input id="webMax" type="number" min="3" max="20" value="10" style="width:80px;padding:9px;border:1px solid #ccd4df;border-radius:7px;">
+    </label>
+    <button class="primary" style="width:auto;margin-top:0" onclick="rechercherOpportunitesWebV20()">🔎 Rechercher avec Gemini</button>
+    <button class="secondary" style="width:auto;margin-top:0" onclick="chargerOpportunitesWebV20()">↻ Charger les opportunités sauvegardées</button>
+  </div>
+
+  <div id="webProspectionInfo" style="margin-top:10px;font-size:13px;color:#667085;"></div>
+  <div id="webOpportunitesListe" style="margin-top:14px;">Aucune recherche effectuée.</div>
+</section>
+
 <section class="panel" id="devisSuiviPanelV19">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
     <div>
@@ -1801,6 +1845,108 @@ async function lancerRapportIA() {
 }
 
 
+// ================== PROSPECTION WEB IA V2.0 ==================
+let opportunitesWebV20=[];
+function badgeTypeWebV20(type){
+  const map={APPEL_OFFRES:'📢 Appel d’offres',IMMOBILIER:'🏢 Immobilier',PUBLIC:'🏛️ Public',PRIVE:'🏭 Privé',AUTRE:'📌 Autre'};
+  return map[type]||'📌 Autre';
+}
+function formatPertinenceWebV20(n){
+  const v=Math.max(0,Math.min(100,Number(n||0)));
+  return v+'%';
+}
+function renderOpportunitesWebV20(rows){
+  const zone=document.getElementById('webOpportunitesListe');
+  if(!zone)return;
+  if(!rows.length){zone.innerHTML='<div style="padding:14px;background:#f7f9fc;border-radius:8px;color:#667085;">Aucune opportunité trouvée.</div>';return;}
+  zone.innerHTML=rows.map((o,i)=>`<div style="border:1px solid #dbe4ef;border-radius:12px;padding:14px;margin-bottom:10px;background:white;">
+    <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start;">
+      <div style="flex:1;min-width:240px;">
+        <div style="font-weight:bold;font-size:15px;">${escapeHtml(o.titre||'Opportunité sans titre')}</div>
+        <div style="font-size:12px;color:#667085;margin-top:5px;">${escapeHtml(badgeTypeWebV20(o.type_opportunite))} · ${escapeHtml(o.organisation||'Organisation non précisée')} · ${escapeHtml(o.ville||'Zone non précisée')}</div>
+      </div>
+      <div style="font-weight:bold;font-size:13px;">🎯 ${escapeHtml(formatPertinenceWebV20(o.pertinence))}</div>
+    </div>
+    <div style="margin-top:10px;font-size:13px;line-height:1.5;">${escapeHtml(o.description||o.resume||'Aucune description disponible.')}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px;font-size:12px;color:#475467;">
+      <div>🛠️ Service : <strong>${escapeHtml(o.service||'Non précisé')}</strong></div>
+      <div>⏳ Date limite : <strong>${escapeHtml(o.date_limite||'Non trouvée')}</strong></div>
+      <div>📅 Publication : ${escapeHtml(o.date_publication||'Non trouvée')}</div>
+      <div>📞 Contact : ${escapeHtml(o.contact||'Non trouvé')} ${o.telephone?' — '+escapeHtml(o.telephone):''}</div>
+    </div>
+    ${o.email?'<div style="font-size:12px;margin-top:6px;">✉️ '+escapeHtml(o.email)+'</div>':''}
+    <div style="margin-top:8px;font-size:12px;background:#f7f9fc;padding:8px;border-radius:7px;">🔎 <strong>Pourquoi c’est intéressant :</strong> ${escapeHtml(o.resume||'Analyse non fournie.')}</div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:10px;">
+      <a href="${escapeHtml(o.url_source||'#')}" target="_blank" rel="noopener" style="padding:7px 10px;background:#edf2f8;border-radius:7px;text-decoration:none;color:#172033;">🌐 Voir la source</a>
+      <button type="button" onclick="ajouterOpportuniteAuCrmV20(${Number(o.id||0)},${i})" style="background:#0b3d91;color:white;padding:7px 10px;">➕ Ajouter au CRM</button>
+      <button type="button" onclick="changerStatutOpportuniteV20(${Number(o.id||0)},'A_VERIFIER')" style="background:#fff4d6;color:#7a4b00;padding:7px 10px;">🔍 À vérifier</button>
+      <button type="button" onclick="changerStatutOpportuniteV20(${Number(o.id||0)},'IGNOREE')" style="background:#edf2f8;color:#667085;padding:7px 10px;">Ignorer</button>
+    </div>
+  </div>`).join('');
+}
+async function rechercherOpportunitesWebV20(){
+  const status=document.getElementById('webProspectionStatus');
+  const info=document.getElementById('webProspectionInfo');
+  if(status){status.className='ia-status-pill';status.textContent='⏳ Recherche web...';}
+  if(info)info.textContent='Gemini utilise Google Search pour rechercher et qualifier les opportunités. Cela peut prendre quelques secondes.';
+  try{
+    const body={
+      zone:document.getElementById('webZone')?.value||'',
+      type:document.getElementById('webType')?.value||'Tous',
+      service:document.getElementById('webService')?.value||'',
+      periode:document.getElementById('webPeriode')?.value||'30 derniers jours',
+      max_results:Number(document.getElementById('webMax')?.value||10)
+    };
+    const r=await fetch('/robot/opportunites-web',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const data=await r.json();
+    if(!r.ok||!data.success)throw new Error(data.message||'Recherche impossible.');
+    opportunitesWebV20=data.opportunites||[];
+    renderOpportunitesWebV20(opportunitesWebV20);
+    if(status){status.className='ia-status-pill ok';status.textContent='🟢 Recherche terminée';}
+    if(info)info.textContent=`${data.count||0} opportunité(s) trouvée(s), ${data.saved||0} enregistrée(s) dans la veille. Source : Google Search + Gemini.`;
+  }catch(error){
+    console.error('Prospection Web IA V2.0',error);
+    if(status){status.className='ia-status-pill fallback';status.textContent='⚠️ Erreur';}
+    if(info)info.textContent='❌ '+error.message;
+  }
+}
+async function chargerOpportunitesWebV20(){
+  try{
+    const data=await api('/crm/opportunites-web?limit=50');
+    opportunitesWebV20=data.opportunites||[];
+    renderOpportunitesWebV20(opportunitesWebV20);
+    const info=document.getElementById('webProspectionInfo');
+    if(info)info.textContent=`${opportunitesWebV20.length} opportunité(s) sauvegardée(s).`;
+  }catch(error){
+    const zone=document.getElementById('webOpportunitesListe');
+    if(zone)zone.innerHTML='<div style="color:#b42318;">❌ '+escapeHtml(error.message)+'</div>';
+  }
+}
+async function changerStatutOpportuniteV20(id,statut){
+  if(!id)return;
+  try{
+    const r=await fetch('/crm/opportunites-web/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({statut})});
+    const data=await r.json();
+    if(!r.ok||!data.success)throw new Error(data.message||'Mise à jour impossible.');
+    await chargerOpportunitesWebV20();
+  }catch(error){alert('❌ '+error.message);}
+}
+async function ajouterOpportuniteAuCrmV20(id,index){
+  const o=opportunitesWebV20[index];
+  if(!id||!o){alert('Opportunité introuvable.');return;}
+  const ok=confirm('Ajouter cette opportunité au CRM comme nouveau prospect ?\n\n'+(o.organisation||o.titre));
+  if(!ok)return;
+  try{
+    const r=await fetch('/crm/opportunites-web/'+id+'/ajouter-crm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({telephone:o.telephone||''})});
+    const data=await r.json();
+    if(!r.ok||!data.success)throw new Error(data.message||'Ajout au CRM impossible.');
+    alert('✅ Opportunité ajoutée au CRM.\n\nProspect ID : '+data.prospect_id+'\n\nLa source a été enregistrée dans une note commerciale.');
+    await chargerOpportunitesWebV20();
+    await loadData();
+  }catch(error){alert('❌ '+error.message);}
+}
+// ================== FIN PROSPECTION WEB IA V2.0 ==================
+
 // ================== DEVIS V1.8 ==================
 let devisLignesV18=[];
 let devisChargeIdV18=null;
@@ -2196,6 +2342,7 @@ function escapeHtml(s){return String(s).replaceAll("&","&amp;").replaceAll("<","
 loadData();
 loadDashboardV14();
 chargerSuiviDevisV19();
+chargerOpportunitesWebV20();
 </script>
 </body>
 </html>
