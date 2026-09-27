@@ -1,10 +1,14 @@
 {
   "name": "visionprotection-whatsapp-crm",
-  "version": "1.8.0",
-  "description": "VisionProtection WhatsApp CRM V1.8 + devis + exports Excel/PDF",
+  "version": "1.9.0",
+  "description": "VisionProtection WhatsApp CRM V1.9 + suivi des devis + exports Excel/PDF",
   "main": "index.js",
-  "scripts": {"start": "node index.js"},
-  "engines": {"node": ">=18"},
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "axios": "^1.7.9",
     "express": "^4.21.2",
@@ -14,3 +18,4 @@
     "pdfkit": "^0.16.0"
   }
 }
+
