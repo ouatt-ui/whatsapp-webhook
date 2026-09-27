@@ -477,30 +477,17 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
       <div id="statutHistoriqueV16" style="margin-top:8px;color:#667085;font-size:12px;"></div>
     </div>
 
-    <!-- ASSISTANT D'ACTION COMMERCIALE V1.7 -->
-    <div style="
-      margin:0 20px 20px;
-      padding:16px;
-      background:#f0fdf4;
-      border:1px solid #bbf7d0;
-      border-radius:10px;
-    ">
+    <!-- ASSISTANT D’ACTION COMMERCIALE V1.7 -->
+    <div style="margin:0 20px 20px;padding:16px;background:#eef8f2;border:1px solid #b9dfc7;border-radius:10px;">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
         <div style="font-size:14px;font-weight:bold;">🎯 Assistant d'action commerciale V1.7</div>
-        <button type="button" onclick="obtenirRecommandationV17()" style="background:#15803d;color:white;">
-          🧭 Recommander la prochaine action
-        </button>
+        <button type="button" onclick="recommanderActionIA()" style="background:#087443;color:white;">🧭 Recommander la prochaine action</button>
       </div>
-      <div id="statutActionV17" style="margin-top:10px;color:#667085;font-size:13px;">
-        L'assistant analyse le statut, l'historique et les notes pour proposer la prochaine action commerciale.
-      </div>
-      <div id="actionV17" style="display:none;margin-top:12px;padding:12px;background:white;border:1px solid #d7eadb;border-radius:8px;white-space:pre-wrap;font-size:13px;line-height:1.5;"></div>
-      <div id="actionsBoutonsV17" style="display:none;margin-top:10px;gap:8px;flex-wrap:wrap;">
+      <div id="statutActionV17" style="margin-top:10px;color:#667085;font-size:12px;">L'IA analyse l'historique, le statut, le besoin et les notes. Aucune action ou aucun envoi n'est automatique.</div>
+      <div id="recommandationActionV17" style="display:none;margin-top:12px;padding:12px;background:white;border:1px solid #d7e8dc;border-radius:8px;white-space:pre-wrap;font-size:13px;line-height:1.5;"></div>
+      <div id="actionsV17" style="display:none;gap:8px;flex-wrap:wrap;margin-top:10px;">
         <button type="button" onclick="utiliserMessageV17()" style="background:#198754;color:white;">💬 Utiliser le message conseillé</button>
         <button type="button" onclick="preparerNoteV17()" style="background:#0b3d91;color:white;">📝 Préparer la note commerciale</button>
-      </div>
-      <div style="margin-top:8px;color:#667085;font-size:12px;">
-        Validation humaine obligatoire : aucune action ni aucun envoi automatique n'est effectué.
       </div>
     </div>
 
@@ -908,105 +895,47 @@ async function analyserHistoriqueIA() {
   }
 }
 
-
-async function obtenirRecommandationV17() {
-  if (!prospectSelectionne) {
-    alert("Aucun prospect sélectionné.");
-    return;
-  }
-
-  const numero = prospectSelectionne.telephone || prospectSelectionne.whatsapp_id;
-  const statutZone = document.getElementById("statutActionV17");
-  const actionZone = document.getElementById("actionV17");
-  const boutonsZone = document.getElementById("actionsBoutonsV17");
-  const bouton = Array.from(document.querySelectorAll('#prospectModal button'))
-    .find(b => (b.textContent || '').includes("Recommander la prochaine action"));
-
-  if (!numero) {
-    if (statutZone) statutZone.textContent = "❌ Numéro du prospect introuvable.";
-    return;
-  }
-
-  if (bouton) bouton.disabled = true;
-  if (statutZone) statutZone.textContent = "⏳ Analyse V1.7 : recherche de la prochaine action...";
-  if (actionZone) {
-    actionZone.style.display = "none";
-    actionZone.textContent = "";
-  }
-  if (boutonsZone) boutonsZone.style.display = "none";
-
-  try {
-    const response = await fetch("/robot/recommandation-action", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone: numero })
-    });
-    const data = await response.json();
-    if (!response.ok || !data.success) {
-      throw new Error(data.message || "Impossible de générer la recommandation.");
-    }
-
-    prospectSelectionne._actionV17 = data;
-
-    const texte = [
-      "🎯 ACTION À FAIRE MAINTENANT",
-      data.action || "Non définie",
-      "",
-      "⏰ MOMENT CONSEILLÉ",
-      data.moment || "À déterminer",
-      "",
-      "📌 INFORMATIONS À DEMANDER",
-      data.questions || "Aucune question particulière.",
-      "",
-      "📝 NOTE COMMERCIALE PROPOSÉE",
-      data.note_suggeree || "Aucune note proposée.",
-      "",
-      "💬 MESSAGE CONSEILLÉ",
-      data.message_suggere || "Aucun message proposé."
-    ].join("\n");
-
-    if (actionZone) {
-      actionZone.style.display = "block";
-      actionZone.textContent = texte;
-    }
-    if (boutonsZone) boutonsZone.style.display = "flex";
-    if (statutZone) {
-      statutZone.textContent = data.fallback
-        ? "🟠 Recommandation générée en mode secours CRM."
-        : `🟢 Recommandation Gemini — ${data.model || 'gemini-3.8-flash'}`;
-    }
-  } catch (error) {
-    console.error("Erreur recommandation V1.7 :", error);
-    if (statutZone) statutZone.textContent = "❌ " + error.message;
-    alert("❌ Recommandation impossible : " + error.message);
-  } finally {
-    if (bouton) bouton.disabled = false;
-  }
+async function recommanderActionIA() {
+  if (!prospectSelectionne) { alert("Aucun prospect sélectionné."); return; }
+  const zone=document.getElementById("statutActionV17");
+  const out=document.getElementById("recommandationActionV17");
+  const actions=document.getElementById("actionsV17");
+  const bouton=Array.from(document.querySelectorAll('#prospectModal button')).find(b=>(b.textContent||'').includes('Recommander la prochaine action'));
+  if(bouton) bouton.disabled=true;
+  if(zone) zone.textContent='⏳ Analyse commerciale V1.7 en cours...';
+  if(actions) actions.style.display='none';
+  try{
+    const numero=prospectSelectionne.telephone||prospectSelectionne.whatsapp_id;
+    if(!numero) throw new Error('Numéro WhatsApp introuvable.');
+    const response=await fetch('/robot/recommander-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:numero})});
+    const data=await response.json();
+    if(!response.ok||!data.success) throw new Error(data.message||'Recommandation impossible.');
+    if(out){out.style.display='block';out.textContent=typeof data.recommandation==='string'?data.recommandation:(data.recommandation?.texte||JSON.stringify(data.recommandation,null,2));}
+    prospectSelectionne._recommandationV17=data.recommandation;
+    if(actions) actions.style.display='flex';
+    if(zone) zone.textContent=data.fallback?'🟠 Recommandation générée en mode secours CRM.':'🟢 Recommandation Gemini — '+(data.model||'gemini');
+  }catch(error){console.error('Erreur recommandation V1.7 :',error);if(zone)zone.textContent='❌ '+error.message;alert('❌ Recommandation impossible : '+error.message);}
+  finally{if(bouton)bouton.disabled=false;}
 }
 
-function utiliserMessageV17() {
-  const data = prospectSelectionne?._actionV17;
-  if (!data || !data.message_suggere) {
-    alert("Générez d'abord la recommandation V1.7.");
-    return;
-  }
-  const textarea = document.getElementById("messageRelance");
-  if (textarea) textarea.value = data.message_suggere;
-  prospectSelectionne._messageRelance = data.message_suggere;
-  const zone = document.getElementById("statutRelanceIA");
-  if (zone) zone.textContent = "🟢 Message conseillé V1.7 chargé. Vous pouvez le modifier avant tout envoi.";
-  textarea?.scrollIntoView({ behavior: "smooth", block: "center" });
+function utiliserMessageV17(){
+  const r=prospectSelectionne?._recommandationV17;
+  const texte=typeof r==='string'?r:'';
+  const match=texte.match(/💬 MESSAGE WHATSAPP CONSEILLÉ\s*\n([\s\S]*)/i);
+  const message=match?match[1].trim():'';
+  const box=document.getElementById('messageRelance');
+  if(!box||!message){alert('Le message conseillé n’a pas pu être extrait. Vous pouvez le copier depuis la recommandation.');return;}
+  box.value=message; box.focus();
 }
 
-function preparerNoteV17() {
-  const data = prospectSelectionne?._actionV17;
-  if (!data || !data.note_suggeree) {
-    alert("Générez d'abord la recommandation V1.7.");
-    return;
-  }
-  const textarea = document.getElementById("nouvelleNote");
-  if (textarea) textarea.value = data.note_suggeree;
-  textarea?.scrollIntoView({ behavior: "smooth", block: "center" });
+function preparerNoteV17(){
+  const r=prospectSelectionne?._recommandationV17;
+  const texte=typeof r==='string'?r:'';
+  const match=texte.match(/📝 NOTE COMMERCIALE PROPOSÉE\s*\n([\s\S]*?)(?=\n(?:5\.|💬 MESSAGE WHATSAPP CONSEILLÉ)|$)/i);
+  const note=match?match[1].trim():'';
+  const box=document.getElementById('nouvelleNote');
+  if(!box||!note){alert('La note proposée n’a pas pu être extraite.');return;}
+  box.value=note; box.focus();
 }
 
 async function genererRelanceIA() {
@@ -1125,14 +1054,6 @@ function ouvrirProspectObjet(prospect) {
 
   const modal = document.getElementById("prospectModal");
   if (modal) modal.classList.add("show");
-
-  prospectSelectionne._actionV17 = null;
-  const actionZoneV17 = document.getElementById("actionV17");
-  const actionButtonsV17 = document.getElementById("actionsBoutonsV17");
-  const actionStatusV17 = document.getElementById("statutActionV17");
-  if (actionZoneV17) { actionZoneV17.style.display = "none"; actionZoneV17.textContent = ""; }
-  if (actionButtonsV17) actionButtonsV17.style.display = "none";
-  if (actionStatusV17) actionStatusV17.textContent = "L'assistant analyse le statut, l'historique et les notes pour proposer la prochaine action commerciale.";
 
   const setText = (id, value) => {
     const el = document.getElementById(id);
@@ -1358,12 +1279,14 @@ async function ouvrirProspect(id) {
     formaterDate(prospect.updated_at);
 
   
-}
-document
-  .getElementById("prospectModal")
-  .classList.add("show");
+  const modal = document.getElementById("prospectModal");
+  if (modal) modal.classList.add("show");
 
-chargerNotes();async function chargerNotes() {
+  // Charger les notes uniquement après avoir sélectionné le prospect.
+  await chargerNotes();
+}
+
+async function chargerNotes() {
 
   const container = document.getElementById("listeNotes");
 
