@@ -286,6 +286,23 @@ await pool.query(`
    INDEX idx_devis_lignes_devis(devis_id),
    CONSTRAINT fk_devis_lignes_devis FOREIGN KEY(devis_id) REFERENCES devis(id) ON DELETE CASCADE
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+
+  // ================== SUIVI DEVIS V1.9 ==================
+  // Migration non destructive : ajoute les champs de suivi si la table existe déjà.
+  const migrationsDevisV19 = [
+    `ALTER TABLE devis ADD COLUMN statut_suivi VARCHAR(30) NOT NULL DEFAULT 'Brouillon'`,
+    `ALTER TABLE devis ADD COLUMN date_envoi DATE NULL`,
+    `ALTER TABLE devis ADD COLUMN date_echeance DATE NULL`,
+    `ALTER TABLE devis ADD COLUMN commentaire_suivi TEXT NULL`
+  ];
+  for (const sql of migrationsDevisV19) {
+    try { await pool.query(sql); }
+    catch (e) {
+      if (!String(e.message || '').includes('Duplicate column name')) {
+        console.warn('⚠️ Migration devis V1.9 :', e.message);
+      }
+    }
+  }
   dbReady=true; console.log("✅ MYSQL : connexion Aiven opérationnelle.");
   console.log("✅ MYSQL : tables prospects, messages, notes_commerciales, devis et devis_lignes vérifiées.");
  }catch(e){
@@ -1750,7 +1767,7 @@ app.get('/crm/devis/prospect/:prospectId', async (req,res)=>{
     if(!prospectId) return res.status(400).json({success:false,message:'Prospect invalide.'});
     const [prospectRows]=await pool.query(`SELECT id,nom,telephone,whatsapp_id,entreprise,ville,service,besoin,statut FROM prospects WHERE id=? LIMIT 1`,[prospectId]);
     if(!prospectRows.length) return res.status(404).json({success:false,message:'Prospect introuvable.'});
-    const [devisRows]=await pool.query(`SELECT id,prospect_id,numero_devis,date_devis,objet,total,notes,created_at,updated_at FROM devis WHERE prospect_id=? ORDER BY created_at DESC LIMIT 20`,[prospectId]);
+    const [devisRows]=await pool.query(`SELECT id,prospect_id,numero_devis,date_devis,objet,total,notes,statut_suivi,date_envoi,date_echeance,commentaire_suivi,created_at,updated_at FROM devis WHERE prospect_id=? ORDER BY created_at DESC LIMIT 20`,[prospectId]);
     let devis=[];
     for(const d of devisRows){
       const [lignes]=await pool.query(`SELECT id,designation,quantite,prix_unitaire,prix_total,ordre FROM devis_lignes WHERE devis_id=? ORDER BY ordre,id`,[d.id]);
@@ -1773,27 +1790,150 @@ app.post('/crm/devis', async (req,res)=>{
     if(!lignes.length) return res.status(400).json({success:false,message:'Ajoutez au moins une ligne au devis.'});
     const [prospectRows]=await pool.query(`SELECT id FROM prospects WHERE id=? LIMIT 1`,[prospectId]);
     if(!prospectRows.length) return res.status(404).json({success:false,message:'Prospect introuvable.'});
+
     const dateDevis=String(req.body?.date_devis||dateDevisDefaut()).slice(0,10);
     const objet=String(req.body?.objet||'').trim().slice(0,255);
     const notes=String(req.body?.notes||'').trim();
     const total=calculerTotalDevis(lignes);
+
+    const statutsAutorises=['Brouillon','Envoyé','En attente','Accepté','Refusé'];
+    const statut_suivi=statutsAutorises.includes(String(req.body?.statut_suivi||'')) ? String(req.body.statut_suivi) : 'Brouillon';
+    let date_envoi=req.body?.date_envoi ? String(req.body.date_envoi).slice(0,10) : null;
+    const date_echeance=req.body?.date_echeance ? String(req.body.date_echeance).slice(0,10) : null;
+    const commentaire_suivi=String(req.body?.commentaire_suivi||'').trim();
+    if ((statut_suivi==='Envoyé' || statut_suivi==='En attente') && !date_envoi) {
+      date_envoi=new Date().toISOString().slice(0,10);
+    }
+
     conn=await pool.getConnection();
     await conn.beginTransaction();
-    const [ins]=await conn.query(`INSERT INTO devis(prospect_id,numero_devis,date_devis,objet,total,notes) VALUES(?,?,?,?,?,?)`,[prospectId,'TEMP-'+Date.now(),dateDevis,objet,total,notes]);
+    const [ins]=await conn.query(
+      `INSERT INTO devis(prospect_id,numero_devis,date_devis,objet,total,notes,statut_suivi,date_envoi,date_echeance,commentaire_suivi)
+       VALUES(?,?,?,?,?,?,?,?,?,?)`,
+      [prospectId,'TEMP-'+Date.now(),dateDevis,objet,total,notes,statut_suivi,date_envoi,date_echeance,commentaire_suivi]
+    );
     const devisId=ins.insertId;
     const numero=numeroDevisAuto(devisId);
     await conn.query(`UPDATE devis SET numero_devis=? WHERE id=?`,[numero,devisId]);
     for(const l of lignes){
-      await conn.query(`INSERT INTO devis_lignes(devis_id,designation,quantite,prix_unitaire,prix_total,ordre) VALUES(?,?,?,?,?,?)`,[devisId,l.designation,l.quantite,l.prix_unitaire,l.prix_total,l.ordre]);
+      await conn.query(
+        `INSERT INTO devis_lignes(devis_id,designation,quantite,prix_unitaire,prix_total,ordre) VALUES(?,?,?,?,?,?)`,
+        [devisId,l.designation,l.quantite,l.prix_unitaire,l.prix_total,l.ordre]
+      );
     }
     await conn.commit(); conn.release(); conn=null;
-    res.json({success:true,devis:{id:devisId,prospect_id:prospectId,numero_devis:numero,date_devis:dateDevis,objet,total,notes,lignes}});
+
+    res.json({success:true,devis:{
+      id:devisId,prospect_id:prospectId,numero_devis:numero,date_devis:dateDevis,
+      objet,total,notes,lignes,statut_suivi,date_envoi,date_echeance,commentaire_suivi
+    }});
   }catch(error){
-    if(conn){try{await conn.rollback();conn.release();}catch(_){} }
-    console.error('❌ DEVIS SAVE :',error.message);
+    if(conn){try{await conn.rollback();conn.release();}catch(_){}}
+    console.error('❌ DEVIS SAVE V1.9 :',error.message);
     res.status(500).json({success:false,message:error.message});
   }
 });
+
+// Liste globale des devis pour le tableau de suivi V1.9.
+app.get('/crm/devis-suivi', async (req,res)=>{
+  try{
+    if(!dbReady||!pool) return res.status(503).json({success:false,message:'Base MySQL non disponible.'});
+    const [rows]=await pool.query(`
+      SELECT
+        d.id,d.prospect_id,d.numero_devis,d.date_devis,d.objet,d.total,d.notes,
+        COALESCE(d.statut_suivi,'Brouillon') AS statut_suivi,
+        d.date_envoi,d.date_echeance,d.commentaire_suivi,d.created_at,d.updated_at,
+        p.nom,p.telephone,p.whatsapp_id,p.entreprise,p.ville,p.service,p.besoin,p.statut AS statut_prospect
+      FROM devis d
+      JOIN prospects p ON p.id=d.prospect_id
+      ORDER BY
+        CASE COALESCE(d.statut_suivi,'Brouillon')
+          WHEN 'En attente' THEN 1
+          WHEN 'Envoyé' THEN 2
+          WHEN 'Brouillon' THEN 3
+          WHEN 'Accepté' THEN 4
+          WHEN 'Refusé' THEN 5
+          ELSE 6
+        END,
+        COALESCE(d.date_echeance,'2999-12-31') ASC,
+        d.created_at DESC
+      LIMIT 200
+    `);
+    const today=new Date().toISOString().slice(0,10);
+    const devis=rows.map(d=>{
+      const actif=['Brouillon','Envoyé','En attente'].includes(d.statut_suivi);
+      const enRetard=Boolean(d.date_echeance && d.date_echeance < today && actif);
+      return {...d,total:Number(d.total),en_retard:enRetard};
+    });
+    const actif=devis.filter(d=>['Brouillon','Envoyé','En attente'].includes(d.statut_suivi));
+    const attente=devis.filter(d=>d.statut_suivi==='En attente');
+    const envoyes=devis.filter(d=>d.statut_suivi==='Envoyé');
+    const acceptes=devis.filter(d=>d.statut_suivi==='Accepté');
+    const refuses=devis.filter(d=>d.statut_suivi==='Refusé');
+    const retard=devis.filter(d=>d.en_retard);
+    const potentiel=actif.reduce((s,d)=>s+d.total,0);
+    const caAccepte=acceptes.reduce((s,d)=>s+d.total,0);
+    const caRefuse=refuses.reduce((s,d)=>s+d.total,0);
+    res.json({
+      success:true,
+      generated_at:new Date().toISOString(),
+      statistiques:{
+        total:devis.length,
+        brouillons:devis.filter(d=>d.statut_suivi==='Brouillon').length,
+        envoyes:envoyes.length,
+        attente:attente.length,
+        acceptes:acceptes.length,
+        refuses:refuses.length,
+        en_retard:retard.length,
+        potentiel:Number(potentiel.toFixed(2)),
+        ca_accepte:Number(caAccepte.toFixed(2)),
+        ca_refuse:Number(caRefuse.toFixed(2))
+      },
+      devis
+    });
+  }catch(error){
+    console.error('❌ DEVIS SUIVI :',error.message);
+    res.status(500).json({success:false,message:error.message});
+  }
+});
+
+// Mise à jour du suivi d'un devis.
+app.patch('/crm/devis/:id/suivi', async (req,res)=>{
+  try{
+    if(!dbReady||!pool) return res.status(503).json({success:false,message:'Base MySQL non disponible.'});
+    const id=Number(req.params.id);
+    if(!id) return res.status(400).json({success:false,message:'Devis invalide.'});
+    const statutsAutorises=['Brouillon','Envoyé','En attente','Accepté','Refusé'];
+    const statut=String(req.body?.statut_suivi||'');
+    if(!statutsAutorises.includes(statut)) return res.status(400).json({success:false,message:'Statut de devis invalide.'});
+
+    let dateEnvoi=req.body?.date_envoi ? String(req.body.date_envoi).slice(0,10) : null;
+    const dateEcheance=req.body?.date_echeance ? String(req.body.date_echeance).slice(0,10) : null;
+    const commentaire=String(req.body?.commentaire_suivi||'').trim();
+
+    if((statut==='Envoyé'||statut==='En attente') && !dateEnvoi){
+      dateEnvoi=new Date().toISOString().slice(0,10);
+    }
+
+    const [r]=await pool.query(
+      `UPDATE devis SET statut_suivi=?,date_envoi=?,date_echeance=?,commentaire_suivi=? WHERE id=?`,
+      [statut,dateEnvoi,dateEcheance,commentaire,id]
+    );
+    if(!r.affectedRows) return res.status(404).json({success:false,message:'Devis introuvable.'});
+
+    const [[d]]=await pool.query(`
+      SELECT d.id,d.prospect_id,d.numero_devis,d.total,d.statut_suivi,d.date_envoi,d.date_echeance,d.commentaire_suivi,
+             p.nom,p.telephone,p.whatsapp_id,p.service,p.besoin
+      FROM devis d JOIN prospects p ON p.id=d.prospect_id WHERE d.id=? LIMIT 1
+    `,[id]);
+
+    res.json({success:true,devis:{...d,total:Number(d.total)}});
+  }catch(error){
+    console.error('❌ DEVIS UPDATE V1.9 :',error.message);
+    res.status(500).json({success:false,message:error.message});
+  }
+});
+
 
 async function lirePayloadDevis(req,res){
   const prospectId=Number(req.body?.prospect_id);
@@ -1804,7 +1944,16 @@ async function lirePayloadDevis(req,res){
   const lignes=normaliserLignesDevis(req.body?.lignes);
   if(!lignes.length) throw new Error('Ajoutez au moins une ligne au devis.');
   const total=calculerTotalDevis(lignes);
-  return {prospect,lignes,total,date_devis:String(req.body?.date_devis||dateDevisDefaut()).slice(0,10),objet:String(req.body?.objet||'').trim(),notes:String(req.body?.notes||'').trim(),numero_devis:String(req.body?.numero_devis||'').trim()};
+  return {
+    prospect,lignes,total,
+    date_devis:String(req.body?.date_devis||dateDevisDefaut()).slice(0,10),
+    objet:String(req.body?.objet||'').trim(),
+    notes:String(req.body?.notes||'').trim(),
+    numero_devis:String(req.body?.numero_devis||'').trim(),
+    statut_suivi:String(req.body?.statut_suivi||'Brouillon'),
+    date_envoi:req.body?.date_envoi?String(req.body.date_envoi).slice(0,10):null,
+    date_echeance:req.body?.date_echeance?String(req.body.date_echeance).slice(0,10):null
+  };
 }
 
 app.post('/crm/devis/export/excel', async (req,res)=>{
@@ -1911,5 +2060,5 @@ app.post('/crm/devis/export/pdf', async (req,res)=>{
 
 // ================== FIN DEVIS V1.8 ==================
 
-async function start(){await initDatabase();app.listen(PORT,"0.0.0.0",()=>console.log(`VisionProtection WhatsApp CRM v2.5.4 V1.8 - port ${PORT} - DB ${dbReady?"MYSQL":"MEMORY"}`));}
+async function start(){await initDatabase();app.listen(PORT,"0.0.0.0",()=>console.log(`VisionProtection WhatsApp CRM v2.5.4 V1.9 - port ${PORT} - DB ${dbReady?"MYSQL":"MEMORY"}`));}
 start().catch(e=>{console.error("❌ ERREUR DÉMARRAGE :",e.message);process.exit(1);});
