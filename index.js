@@ -994,7 +994,158 @@ Règles :
   }
 });
 
-// ================== FIN HISTORIQUE INTELLIGENT V1.6 ==================
+// ================== ASSISTANT D'ACTION COMMERCIALE V1.7 ==================
+
+function genererRecommandationFallbackV17(prospect, historique = [], notes = []) {
+  const last = historique.length ? historique[historique.length - 1] : null;
+  const lastIsIn = last && String(last.direction || '').toLowerCase() === 'in';
+  let action = 'Préparer une relance courte et personnalisée.';
+  let moment = 'Prochaine plage commerciale disponible.';
+  let questions = 'Confirmer que le projet est toujours d’actualité et demander la prochaine étape souhaitée.';
+
+  if (lastIsIn) {
+    action = 'Répondre d’abord au dernier message du prospect et traiter précisément sa demande.';
+    moment = 'Dès que possible, puisque le dernier échange vient du prospect.';
+    questions = 'Répondre à la demande formulée dans le dernier message et demander uniquement l’information manquante.';
+  } else if (prospect.statut === 'Qualifié') {
+    action = 'Faire avancer le prospect qualifié vers une prochaine étape concrète : visite technique, collecte des éléments du devis ou rendez-vous.';
+    moment = 'Dans les 24 à 48 heures si aucune action récente n’est enregistrée.';
+    questions = 'Quel est le site du projet, la quantité approximative et le délai souhaité ?';
+  } else if (prospect.statut === 'Devis') {
+    action = 'Vérifier la réception du devis et identifier le point qui bloque la décision.';
+    moment = 'Relance commerciale courte, sans pression.';
+    questions = 'Le devis a-t-il bien été reçu et y a-t-il un point à clarifier ?';
+  } else if (prospect.statut === 'Nouveau') {
+    action = 'Qualifier le besoin avec quelques questions simples avant de proposer une solution.';
+    moment = 'Après le premier échange ou dès qu’une réponse est attendue.';
+    questions = 'Type de site, localisation, besoin exact, quantité et délai du projet.';
+  }
+
+  const service = prospect.service || 'votre projet';
+  const nom = prospect.nom && prospect.nom !== 'Sans nom' ? prospect.nom : '';
+  const message = `Bonjour${nom ? ' ' + nom : ''},\n\nNous revenons vers vous concernant ${service}. Nous souhaitons savoir si votre projet est toujours d’actualité et si vous avez un point particulier à préciser pour la suite.\n\nCordialement,\nVisionProtection & Informatique\nEfficacité et professionnalisme`;
+  const note = `V1.7 — Prochaine action : ${action} Statut actuel : ${prospect.statut || 'Non défini'}. Historique analysé : ${historique.length} échange(s), ${notes.length} note(s).`;
+
+  return { action, moment, questions, note_suggeree: note, message_suggere: message };
+}
+
+app.post('/robot/recommandation-action', async (req, res) => {
+  try {
+    if (!dbReady || !pool) return res.status(503).json({ success:false, message:'Base MySQL non disponible.' });
+    const phone = String(req.body?.phone || '').trim();
+    if (!phone) return res.status(400).json({ success:false, message:'Numéro du prospect obligatoire.' });
+
+    const phoneApi = normalizeForApi(phone);
+    const [rows] = await pool.query(
+      `SELECT id, whatsapp_id, telephone, nom, ville, service, besoin, statut, etat_conversation, created_at, updated_at
+       FROM prospects WHERE whatsapp_id=? OR telephone=? OR whatsapp_id=? OR telephone=? LIMIT 1`,
+      [phone, phone, phoneApi, phoneApi]
+    );
+    if (!rows.length) return res.status(404).json({ success:false, message:'Prospect introuvable.' });
+    const prospect = rows[0];
+    prospect.derniere_activite = prospect.updated_at || prospect.created_at;
+
+    const [messages] = await pool.query(
+      `SELECT direction, message, message_type, created_at FROM messages
+       WHERE prospect_id=? ORDER BY created_at DESC LIMIT 30`,
+      [prospect.id]
+    );
+    const [notes] = await pool.query(
+      `SELECT note, auteur, created_at FROM notes_commerciales
+       WHERE prospect_id=? ORDER BY created_at DESC LIMIT 12`,
+      [prospect.id]
+    );
+
+    const historique = messages.reverse().map(m => ({
+      direction: m.direction,
+      message: String(m.message || '').slice(0, 1600),
+      type: m.message_type || 'text',
+      date: m.created_at
+    }));
+    const notesCommerciales = notes.map(n => ({
+      note: String(n.note || '').slice(0, 1000),
+      auteur: n.auteur,
+      date: n.created_at
+    }));
+
+    const donnees = {
+      prospect: {
+        nom: prospect.nom || 'Sans nom', telephone: prospect.telephone,
+        ville: prospect.ville || 'Non définie', service: prospect.service || 'Non défini',
+        besoin: prospect.besoin || '', statut: prospect.statut || 'Non défini',
+        etat_conversation: prospect.etat_conversation, derniere_activite: prospect.derniere_activite
+      },
+      historique,
+      notes: notesCommerciales
+    };
+
+    const prompt = `
+Tu es l'assistant commercial de VisionProtection & Informatique à Abidjan.
+Analyse uniquement les données CRM réelles ci-dessous et recommande la prochaine action humaine.
+Ne réalise aucune action et n'envoie aucun message.
+
+DONNEES CRM :
+${JSON.stringify(donnees, null, 2)}
+
+Retourne UNIQUEMENT un JSON valide avec exactement ces champs :
+{
+  "action": "action concrète à faire maintenant",
+  "moment": "moment ou fenêtre de contact conseillée, sans inventer de rendez-vous",
+  "questions": "informations à demander au prospect",
+  "note_suggeree": "note commerciale courte à enregistrer après validation humaine",
+  "message_suggere": "message WhatsApp court et professionnel, à valider avant envoi"
+}
+
+Règles :
+- N'invente aucun fait, prix, délai, disponibilité ou rendez-vous.
+- Utilise le statut, le dernier échange et les notes réellement présents.
+- Si le dernier message vient du prospect, recommande d'abord une réponse à sa demande.
+- Ne change pas le statut du prospect.
+- Ne prétends jamais avoir contacté le prospect.
+- Le message doit être directement modifiable par le commercial.
+`;
+
+    let resultData;
+    let model = 'CRM-FALLBACK';
+    let fallback = false;
+    let fallbackReason = null;
+
+    try {
+      const result = await callGemini(prompt, { max503Retries: 1 });
+      let raw = String(result.text || '').trim();
+      raw = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+      resultData = JSON.parse(raw);
+      model = result.model || 'gemini-3.8-flash';
+    } catch (aiError) {
+      fallback = true;
+      fallbackReason = aiError.message;
+      resultData = genererRecommandationFallbackV17(prospect, historique, notesCommerciales);
+    }
+
+    const required = ['action','moment','questions','note_suggeree','message_suggere'];
+    for (const key of required) {
+      if (!resultData[key]) resultData[key] = genererRecommandationFallbackV17(prospect, historique, notesCommerciales)[key];
+    }
+
+    res.json({
+      success:true,
+      prospect:{ id:prospect.id, nom:prospect.nom, telephone:prospect.telephone, service:prospect.service, besoin:prospect.besoin, statut:prospect.statut },
+      ...resultData,
+      model,
+      ai_available:!fallback,
+      fallback,
+      fallback_reason:fallbackReason,
+      history_count:historique.length,
+      notes_count:notesCommerciales.length,
+      generated_at:new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ ERREUR ASSISTANT ACTION V1.7 :', error.response?.data || error.message);
+    res.status(500).json({ success:false, message:error.message });
+  }
+});
+
+// ================== FIN ASSISTANT D'ACTION COMMERCIALE V1.7 ==================
 
 
 // ================== ENVOI RELANCE WHATSAPP V1.3 ==================
@@ -1382,6 +1533,14 @@ app.get("/robot/run", async (req, res) => {
         SUM(statut='Client') AS clients,
         SUM(statut='Perdu') AS perdus
       FROM prospects
+    `);
+
+    const [[activite7j]] = await pool.query(`
+      SELECT
+        COUNT(*) AS nouveaux_prospects,
+        SUM(statut='Devis') AS nouveaux_devis,
+        SUM(statut='Client') AS nouveaux_clients
+      FROM prospects
       WHERE created_at >= NOW() - INTERVAL 7 DAY
     `);
 
@@ -1391,6 +1550,16 @@ app.get("/robot/run", async (req, res) => {
     // ==========================================
 
     const [services] = await pool.query(`
+      SELECT
+        COALESCE(service,'Non défini') AS service,
+        COUNT(*) AS total
+      FROM prospects
+      GROUP BY service
+      ORDER BY total DESC
+      LIMIT 10
+    `);
+
+    const [services7j] = await pool.query(`
       SELECT
         COALESCE(service,'Non défini') AS service,
         COUNT(*) AS total
@@ -1407,6 +1576,16 @@ app.get("/robot/run", async (req, res) => {
     // ==========================================
 
     const [villes] = await pool.query(`
+      SELECT
+        COALESCE(ville,'Non définie') AS ville,
+        COUNT(*) AS total
+      FROM prospects
+      GROUP BY ville
+      ORDER BY total DESC
+      LIMIT 10
+    `);
+
+    const [villes7j] = await pool.query(`
       SELECT
         COALESCE(ville,'Non définie') AS ville,
         COUNT(*) AS total
@@ -1435,7 +1614,6 @@ app.get("/robot/run", async (req, res) => {
         created_at,
         updated_at
       FROM prospects
-      WHERE created_at >= NOW() - INTERVAL 7 DAY
       ORDER BY created_at DESC
       LIMIT 30
     `);
@@ -1467,6 +1645,12 @@ app.get("/robot/run", async (req, res) => {
     const donnees = {
       periode: "7 derniers jours",
 
+      activite_7j: {
+        nouveaux_prospects: Number(activite7j.nouveaux_prospects || 0),
+        nouveaux_devis: Number(activite7j.nouveaux_devis || 0),
+        nouveaux_clients: Number(activite7j.nouveaux_clients || 0)
+      },
+
       statistiques: {
         total: Number(global.total || 0),
         nouveaux: Number(global.nouveaux || 0),
@@ -1482,7 +1666,17 @@ app.get("/robot/run", async (req, res) => {
         total: Number(x.total)
       })),
 
+      services_7j: services7j.map(x => ({
+        service: x.service,
+        total: Number(x.total)
+      })),
+
       villes: villes.map(x => ({
+        ville: x.ville,
+        total: Number(x.total)
+      })),
+
+      villes_7j: villes7j.map(x => ({
         ville: x.ville,
         total: Number(x.total)
       })),
@@ -1530,13 +1724,13 @@ Produis un rapport commercial court, clair et concret en français.
 Structure obligatoirement ta réponse ainsi :
 
 1. 📊 SITUATION COMMERCIALE
-Résume l'activité des 7 derniers jours.
+Distingue clairement la situation globale du CRM et l'activité des 7 derniers jours. Ne dis jamais que le pipeline est vide simplement parce qu'aucun prospect n'a été créé dans les 7 derniers jours.
 
 2. 🔐 SERVICES DEMANDÉS
-Indique les services qui ressortent le plus.
+Distingue les services présents dans le CRM des nouveaux services des 7 derniers jours.
 
 3. 📍 ZONES INTÉRESSANTES
-Indique les villes ou zones qui ressortent.
+Distingue les zones présentes dans le CRM des nouvelles zones des 7 derniers jours.
 
 4. 🎯 PROSPECTS À TRAITER
 Indique quels types de prospects doivent être traités en priorité
@@ -1629,6 +1823,6 @@ try {
 });
 
 // ================== FIN ROBOT IA COMMERCIAL ==================
-app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.4-v1.6",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
-async function start(){await initDatabase();app.listen(PORT,"0.0.0.0",()=>console.log(`VisionProtection WhatsApp CRM v2.5.4 V1.5 RESILIENT - port ${PORT} - DB ${dbReady?"MYSQL":"MEMORY"}`));}
+app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.5.4-v1.7",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
+async function start(){await initDatabase();app.listen(PORT,"0.0.0.0",()=>console.log(`VisionProtection WhatsApp CRM v2.5.4 V1.7 - port ${PORT} - DB ${dbReady?"MYSQL":"MEMORY"}`));}
 start().catch(e=>{console.error("❌ ERREUR DÉMARRAGE :",e.message);process.exit(1);});
