@@ -254,7 +254,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 <section class="panel" id="prospectionWebV20">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
     <div>
-      <h2 style="margin:0">🔎 Prospection Web IA — V2.0</h2>
+      <h2 style="margin:0">🔎 Prospection Web IA — V2.0.1</h2>
       <div style="font-size:12px;color:#667085;margin-top:5px;">Gemini + Google Search pour détecter des opportunités publiques. Validation humaine avant ajout au CRM.</div>
     </div>
     <span id="webProspectionStatus" class="ia-status-pill">Prêt</span>
@@ -284,13 +284,15 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px;">
     <label style="font-size:12px;color:#667085;">Nombre max
-      <input id="webMax" type="number" min="3" max="20" value="10" style="width:80px;padding:9px;border:1px solid #ccd4df;border-radius:7px;">
+      <input id="webMax" type="number" min="3" max="10" value="5" style="width:80px;padding:9px;border:1px solid #ccd4df;border-radius:7px;">
     </label>
     <button class="primary" style="width:auto;margin-top:0" onclick="rechercherOpportunitesWebV20()">🔎 Rechercher avec Gemini</button>
+    <button class="secondary" style="width:auto;margin-top:0" onclick="verifierEtatGoogleSearchV201()">🧪 Vérifier Gemini</button>
     <button class="secondary" style="width:auto;margin-top:0" onclick="chargerOpportunitesWebV20()">↻ Charger les opportunités sauvegardées</button>
   </div>
 
   <div id="webProspectionInfo" style="margin-top:10px;font-size:13px;color:#667085;"></div>
+  <div id="webSearchHealthV201" style="margin-top:8px;padding:9px 11px;border-radius:8px;background:#f7f9fc;color:#667085;font-size:12px;">⏳ Vérification de l’état Gemini/Google Search...</div>
   <div id="webOpportunitesListe" style="margin-top:14px;">Aucune recherche effectuée.</div>
 </section>
 
@@ -1884,30 +1886,63 @@ function renderOpportunitesWebV20(rows){
     </div>
   </div>`).join('');
 }
+async function verifierEtatGoogleSearchV201(){
+  const zone=document.getElementById('webSearchHealthV201');
+  if(zone)zone.textContent='⏳ Vérification de l’état Gemini/Google Search...';
+  try{
+    const r=await fetch('/robot/web-search-status');
+    const d=await r.json();
+    if(!r.ok||!d.success)throw new Error(d.message||'État indisponible.');
+    if(d.quota_blocked){
+      if(zone){zone.style.background='#fff4db';zone.style.color='#8a5a00';zone.innerHTML='🔴 <strong>Google Search bloqué temporairement</strong> — quota atteint. '+escapeHtml(d.message||'Réessayez plus tard.')+' <span style="opacity:.8">Recherches effectuées depuis le démarrage : '+Number(d.searches||0)+'</span>';}
+    }else if(d.available===true){
+      if(zone){zone.style.background='#e7f7ee';zone.style.color='#087443';zone.innerHTML='🟢 <strong>Gemini + Google Search disponibles</strong> — modèle '+escapeHtml(d.model||'gemini-3.8-flash')+' · recherches : '+Number(d.searches||0)+(d.last_search_at?' · dernière : '+escapeHtml(new Date(d.last_search_at).toLocaleString('fr-FR')):'');}
+    }else{
+      if(zone){zone.style.background='#eef2f6';zone.style.color='#475467';zone.innerHTML='🟡 <strong>État non encore vérifié</strong> — le premier lancement de recherche vérifiera le service sans lancer de nouvelle recherche si un quota est déjà bloqué.';}
+    }
+  }catch(error){
+    if(zone){zone.style.background='#fff1f0';zone.style.color='#b42318';zone.textContent='❌ '+error.message;}
+  }
+}
+
 async function rechercherOpportunitesWebV20(){
   const status=document.getElementById('webProspectionStatus');
   const info=document.getElementById('webProspectionInfo');
+  const btns=document.querySelectorAll('#prospectionWebV20 button');
+  btns.forEach(b=>b.disabled=true);
   if(status){status.className='ia-status-pill';status.textContent='⏳ Recherche web...';}
-  if(info)info.textContent='Gemini utilise Google Search pour rechercher et qualifier les opportunités. Cela peut prendre quelques secondes.';
+  if(info)info.textContent='Gemini utilise Google Search pour rechercher et qualifier les opportunités. Budget local V2.0.1 : maximum 10 résultats, 5 par défaut.';
   try{
     const body={
       zone:document.getElementById('webZone')?.value||'',
       type:document.getElementById('webType')?.value||'Tous',
       service:document.getElementById('webService')?.value||'',
       periode:document.getElementById('webPeriode')?.value||'30 derniers jours',
-      max_results:Number(document.getElementById('webMax')?.value||10)
+      max_results:Number(document.getElementById('webMax')?.value||5)
     };
     const r=await fetch('/robot/opportunites-web',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const data=await r.json();
-    if(!r.ok||!data.success)throw new Error(data.message||'Recherche impossible.');
+    if(!r.ok||!data.success){
+      const err=new Error(data.message||'Recherche impossible.');
+      err.code=data.code;err.quota_until=data.quota_until;throw err;
+    }
     opportunitesWebV20=data.opportunites||[];
     renderOpportunitesWebV20(opportunitesWebV20);
     if(status){status.className='ia-status-pill ok';status.textContent='🟢 Recherche terminée';}
     if(info)info.textContent=`${data.count||0} opportunité(s) trouvée(s), ${data.saved||0} enregistrée(s) dans la veille. Source : Google Search + Gemini.`;
+    await verifierEtatGoogleSearchV201();
   }catch(error){
-    console.error('Prospection Web IA V2.0',error);
-    if(status){status.className='ia-status-pill fallback';status.textContent='⚠️ Erreur';}
-    if(info)info.textContent='❌ '+error.message;
+    console.error('Prospection Web IA V2.0.1',error);
+    if(error.code==='WEB_SEARCH_QUOTA'||error.code==='WEB_SEARCH_QUOTA_COOLDOWN'){
+      if(status){status.className='ia-status-pill fallback';status.textContent='🔴 Quota Gemini';}
+      if(info)info.innerHTML='⚠️ <strong>Prospection Web temporairement bloquée.</strong> '+escapeHtml(error.message)+'<br><span style="color:#667085">Le chatbot WhatsApp, le CRM et les devis restent opérationnels.</span>';
+    }else{
+      if(status){status.className='ia-status-pill fallback';status.textContent='⚠️ Erreur';}
+      if(info)info.textContent='❌ '+error.message;
+    }
+    await verifierEtatGoogleSearchV201();
+  }finally{
+    btns.forEach(b=>b.disabled=false);
   }
 }
 async function chargerOpportunitesWebV20(){
@@ -1945,7 +1980,7 @@ async function ajouterOpportuniteAuCrmV20(id,index){
     await loadData();
   }catch(error){alert('❌ '+error.message);}
 }
-// ================== FIN PROSPECTION WEB IA V2.0 ==================
+// ================== FIN PROSPECTION WEB IA V2.0.1 ==================
 
 // ================== DEVIS V1.8 ==================
 let devisLignesV18=[];
@@ -2343,6 +2378,7 @@ loadData();
 loadDashboardV14();
 chargerSuiviDevisV19();
 chargerOpportunitesWebV20();
+verifierEtatGoogleSearchV201();
 </script>
 </body>
 </html>
