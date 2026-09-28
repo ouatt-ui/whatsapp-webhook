@@ -300,7 +300,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 <section class="panel" id="prospectionMultiV21">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
     <div>
-      <h2 style="margin:0">🌐 Moteur de Prospection Web Multi-Sources — V2.1</h2>
+      <h2 style="margin:0">🌐 Moteur de Prospection Web Multi-Sources — V2.1.1</h2>
       <div style="font-size:12px;color:#667085;margin-top:5px;">Collecte directe de sources publiques. Gemini intervient ensuite uniquement pour qualifier les candidats.</div>
     </div>
     <span id="v21Status" class="ia-status-pill">Prêt</span>
@@ -1958,7 +1958,7 @@ async function collecterProspectionV21(){
     const d=await fetchJsonV202('/robot/prospection-collecte',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     await chargerCollectesV21();
     if(status){status.className='ia-status-pill ok';status.textContent='🟢 Collecte terminée';}
-    if(info)info.textContent=`${d.count||0} candidat(s) collecté(s) depuis ${d.sources_testees||0} source(s), sans utiliser Gemini. ${d.saved||0} nouveau(x) en base.`+(d.errors?.length?' Certaines sources ont répondu avec une erreur.':'');
+    if(info)info.textContent=`${d.count||0} candidat(s) collecté(s) depuis ${d.sources_testees||0} source(s), sans utiliser Gemini. ${d.saved||0} nouveau(x) en base.`+(d.performance?.parallel?' Collecte parallèle activée.':'')+(d.errors?.length?' Certaines sources ont répondu avec une erreur.':'');
   }catch(e){if(status){status.className='ia-status-pill fallback';status.textContent='⚠️ Erreur collecte';}if(info)info.textContent='❌ '+e.message;}
 }
 async function chargerCollectesV21(){
