@@ -336,6 +336,24 @@ await pool.query(`
    INDEX idx_opportunite_statut(statut),
    INDEX idx_opportunite_date(date_limite)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS prospection_web_collectes(
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    source_id VARCHAR(80) NOT NULL,
+    source_nom VARCHAR(255) NOT NULL,
+    url_source TEXT NOT NULL,
+    titre VARCHAR(500) NOT NULL,
+    url_cible TEXT NOT NULL,
+    extrait TEXT,
+    pertinence INT DEFAULT 0,
+    statut VARCHAR(40) NOT NULL DEFAULT 'COLLECTEE',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_collecte_url(url_cible(500)),
+    INDEX idx_collecte_source(source_id),
+    INDEX idx_collecte_statut(statut)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+
   // ================== SUIVI DEVIS V1.9 ==================
   // Migration non destructive : ajoute les champs de suivi si la table existe déjà.
   const migrationsDevisV19 = [
@@ -1783,6 +1801,161 @@ try {
 });
 
 // ================== FIN ROBOT IA COMMERCIAL ==================
+
+// ================== PROSPECTION WEB MULTI-SOURCES V2.1 ==================
+const PROSPECTION_SOURCES_V21 = [
+  {id:'DGMP', nom:'DGMP — Marchés publics Côte d’Ivoire', type:'APPEL_OFFRES', url:'https://marchespublics.ci/accueil/home'},
+  {id:'DGMP_PPM_2026', nom:'DGMP — Plans de passation 2026', type:'APPEL_OFFRES', url:'https://marchespublics.ci/plan_passation/an/PPM/2026'},
+  {id:'CONSTRUCTION_CI', nom:'Ministère de la Construction, du Logement et du Cadre de Vie', type:'IMMOBILIER', url:'https://construction.gouv.ci/index.php/accueil'},
+  {id:'PJ_PROMOTEURS', nom:'Pages Jaunes Abidjan — Promoteurs immobiliers', type:'IMMOBILIER', url:'https://business.abidjan.net/pages-jaunes-1-services-aux-entreprises/620-promoteurs-immobiliers'},
+  {id:'GOAFRICA_PROMOTEURS', nom:'Go Africa Online — Promoteurs immobiliers', type:'IMMOBILIER', url:'https://www.goafricaonline.com/ci/annuaire/promoteurs-immobiliers'},
+  {id:'S3I', nom:'S3I — Promoteur immobilier et constructeur', type:'IMMOBILIER', url:'https://www.s3i.ci/'},
+  {id:'UNGM', nom:'UNGM — United Nations Global Marketplace', type:'PUBLIC', url:'https://www.ungm.org/Public/Notice'}
+];
+
+function getProspectionSourcesV21(){ return PROSPECTION_SOURCES_V21.map(x=>({...x})); }
+function stripHtmlV21(html){
+  return String(html||'')
+    .replace(/<script[\s\S]*?<\/script>/gi,' ')
+    .replace(/<style[\s\S]*?<\/style>/gi,' ')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi,' ')
+    .replace(/<[^>]+>/g,' ')
+    .replace(/&nbsp;/gi,' ')
+    .replace(/&amp;/gi,'&').replace(/&quot;/gi,'"').replace(/&#39;/gi,"'")
+    .replace(/\s+/g,' ').trim();
+}
+function absUrlV21(base,href){
+  try{
+    const u=new URL(String(href||''),base);
+    if(!/^https?:$/i.test(u.protocol)) return '';
+    u.hash='';
+    return u.toString();
+  }catch(_){return '';}
+}
+function scoreCandidateV21(title,url,text,service,type){
+  const hay=(title+' '+url+' '+text+' '+service+' '+type).toLowerCase();
+  const words=['appel d’offres','appel d offres','avis d’appel','avis de consultation','demande de cotation','marché','fournisseur','prestataire','consultation','projet','programme immobilier','construction','promoteur','sécurité','vidéosurveillance','cctv','contrôle d’accès','alarme','incendie','ssi','cmsi','réseau','fibre','wifi','portail','domotique','maintenance'];
+  let score=0;
+  for(const w of words) if(hay.includes(w)) score+=6;
+  if(service && service!=='Tous les services VisionProtection' && hay.includes(service.toLowerCase())) score+=15;
+  if(type && type!=='Tous' && ((type==='Appels d’offres'&&/appel|marché|consultation|cotation/.test(hay)) || (type==='Immobilier'&&/immobili|construction|promoteur|programme/.test(hay)) || (type==='Public'&&/gouv|ministere|mairie|public|administration|un/.test(hay)) || (type==='Privé'&&/entreprise|société|prive|privé/.test(hay)))) score+=12;
+  if(/\.(pdf|docx?|xlsx?)($|\?)/i.test(url)) score+=8;
+  return Math.max(0,Math.min(100,score));
+}
+function classifySourceTypeV21(src,title,text){
+  const h=(src.type+' '+src.nom+' '+title+' '+text).toLowerCase();
+  if(/appel|marché|consultation|ppm|ungm/.test(h)) return 'APPEL_OFFRES';
+  if(/immobili|construction|promoteur|programme/.test(h)) return 'IMMOBILIER';
+  if(/public|gouv|ministere|administration/.test(h)) return 'PUBLIC';
+  return src.type||'AUTRE';
+}
+function extractLinksV21(html,baseUrl){
+  const out=[];
+  const re=/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while((m=re.exec(String(html||'')))!==null){
+    const url=absUrlV21(baseUrl,m[1]);
+    if(!url) continue;
+    const title=stripHtmlV21(m[2]).slice(0,500);
+    if(!title) continue;
+    out.push({url,title});
+  }
+  return out;
+}
+function buildSourceCandidateV21(src,link,bodyText,service,type){
+  const title=link.title||src.nom;
+  const excerpt=bodyText.slice(0,1200);
+  return {
+    source_id:src.id, source_nom:src.nom, url_source:src.url,
+    titre:title, url_cible:link.url, extrait:excerpt,
+    pertinence:scoreCandidateV21(title,link.url,excerpt,service,type),
+    type_opportunite:classifySourceTypeV21(src,title,excerpt)
+  };
+}
+
+app.get('/robot/prospection-sources',(req,res)=>res.json({success:true,version:'2.1.0',sources:getProspectionSourcesV21()}));
+
+app.post('/robot/prospection-collecte',async(req,res)=>{
+  const zone=String(req.body?.zone||'Côte d’Ivoire, principalement Abidjan').trim();
+  const type=String(req.body?.type||'Tous').trim();
+  const service=String(req.body?.service||'Tous les services VisionProtection').trim();
+  const max=Math.max(5,Math.min(30,Number(req.body?.max_results||15)));
+  const ids=Array.isArray(req.body?.sources)&&req.body.sources.length?req.body.sources.map(String):PROSPECTION_SOURCES_V21.map(x=>x.id);
+  const selected=PROSPECTION_SOURCES_V21.filter(x=>ids.includes(x.id));
+  const results=[]; const errors=[];
+  for(const src of selected){
+    try{
+      const r=await axios.get(src.url,{timeout:12000,maxContentLength:4*1024*1024,headers:{'User-Agent':'VisionProtection-Prospection/2.1'}});
+      const html=String(r.data||'');
+      const text=stripHtmlV21(html);
+      const links=extractLinksV21(html,src.url);
+      // Toujours conserver la page source comme candidat de veille si elle contient des termes pertinents.
+      const pageScore=scoreCandidateV21(src.nom,src.url,text,service,type);
+      if(pageScore>=10) results.push(buildSourceCandidateV21(src,{url:src.url,title:src.nom},text,service,type));
+      for(const link of links){
+        const sc=scoreCandidateV21(link.title,link.url,text.slice(0,1800),service,type);
+        if(sc>=12) results.push(buildSourceCandidateV21(src,link,text,service,type));
+      }
+    }catch(e){ errors.push({source:src.nom,message:String(e.message||e).slice(0,250)}); }
+  }
+  const unique=new Map();
+  for(const x of results){
+    const key=x.url_cible.replace(/\/$/,'');
+    if(!unique.has(key)||x.pertinence>unique.get(key).pertinence) unique.set(key,x);
+  }
+  const rows=[...unique.values()].sort((a,b)=>b.pertinence-a.pertinence).slice(0,max);
+  let saved=0;
+  if(dbReady&&pool){
+    for(const c of rows){
+      try{
+        const [r]=await pool.query(`INSERT INTO prospection_web_collectes(source_id,source_nom,url_source,titre,url_cible,extrait,pertinence,statut) VALUES(?,?,?,?,?,?,?,'COLLECTEE') ON DUPLICATE KEY UPDATE titre=VALUES(titre),source_nom=VALUES(source_nom),extrait=VALUES(extrait),pertinence=VALUES(pertinence),updated_at=CURRENT_TIMESTAMP`,[c.source_id,c.source_nom,c.url_source,c.titre,c.url_cible,c.extrait,c.pertinence]);
+        saved+=Number(r.affectedRows||0)>0?1:0;
+      }catch(e){console.warn('⚠️ collecte V2.1',e.message);}
+    }
+  }
+  res.json({success:true,version:'2.1.0',zone,type,service,sources_testees:selected.length,count:rows.length,saved,errors,candidats:rows.map(x=>({...x,statut:'COLLECTEE'})),message:`${rows.length} candidat(s) collecté(s) sans utiliser Gemini.`});
+});
+
+app.get('/robot/prospection-collectes',async(req,res)=>{
+  if(!dbReady||!pool) return res.json({success:true,candidats:[],database:'memory'});
+  const limit=Math.max(1,Math.min(100,Number(req.query.limit||50)));
+  const [rows]=await pool.query(`SELECT id,source_id,source_nom,url_source,titre,url_cible,extrait,pertinence,statut,created_at FROM prospection_web_collectes ORDER BY pertinence DESC,created_at DESC LIMIT ${limit}`);
+  res.json({success:true,candidats:rows});
+});
+
+app.post('/robot/prospection-qualifier',async(req,res)=>{
+  if(!gemini) return res.status(503).json({success:false,code:'GEMINI_NOT_CONFIGURED',message:'GEMINI_API_KEY non configurée.'});
+  if(webSearchQuotaActive()) return res.status(429).json({success:false,code:'WEB_SEARCH_QUOTA_COOLDOWN',quota_blocked:true,quota_until:webSearchHealth.quotaUntil,message:webSearchQuotaMessage()});
+  const candidates=Array.isArray(req.body?.candidats)?req.body.candidats.slice(0,10):[];
+  if(!candidates.length) return res.status(400).json({success:false,message:'Aucun candidat à qualifier.'});
+  const prompt=`Tu es l’agent de qualification commerciale de VisionProtection & Informatique. Qualifie uniquement les candidats web fournis ci-dessous. Ne fabrique aucune information. Un candidat est une opportunité seulement si la source indique un projet, marché, consultation, besoin de prestataire, programme immobilier ou organisation pertinente. Réponds uniquement en JSON valide sous forme de tableau. Champs: index,qualifie,type_opportunite,titre,organisation,ville,service,description,date_limite,pertinence,resume.\n\nCANDIDATS:\n${JSON.stringify(candidates,null,2)}`;
+  try{
+    const response=await gemini.models.generateContent({model:'gemini-3.8-flash',contents:prompt});
+    const parsed=extractJsonFromGemini(response.text||'');
+    if(!parsed) throw new Error('Réponse Gemini non interprétable.');
+    const qualified=Array.isArray(parsed)?parsed:[];
+    let saved=0;
+    if(dbReady&&pool){
+      for(const q of qualified){
+        if(!q?.qualifie) continue;
+        const idx=Number(q.index); const c=candidates[idx]; if(!c) continue;
+        const typeOp=normalizeOpportunityType(q.type_opportunite||c.type_opportunite);
+        const [r]=await pool.query(`INSERT INTO opportunites_web(type_opportunite,titre,organisation,ville,service,description,date_publication,date_limite,contact,email,telephone,url_source,source_nom,pertinence,statut,resume) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'NOUVELLE',?) ON DUPLICATE KEY UPDATE titre=VALUES(titre),organisation=VALUES(organisation),ville=VALUES(ville),service=VALUES(service),description=VALUES(description),date_limite=VALUES(date_limite),pertinence=VALUES(pertinence),resume=VALUES(resume),updated_at=CURRENT_TIMESTAMP`,[typeOp,String(q.titre||c.titre).slice(0,500),q.organisation||'',q.ville||'',q.service||'',q.description||c.extrait||'', '', q.date_limite||'', '', '', '', c.url_cible,c.source_nom,Math.max(0,Math.min(100,Number(q.pertinence||c.pertinence)||0)),q.resume||'']);
+        saved+=Number(r.affectedRows||0)>0?1:0;
+        await pool.query(`UPDATE prospection_web_collectes SET statut='QUALIFIEE' WHERE id=?`,[c.id]).catch(()=>{});
+      }
+    }
+    webSearchHealth={...webSearchHealth,available:true,lastCheck:new Date().toISOString(),lastError:null,reason:null,searches:webSearchHealth.searches+1,lastSearchAt:new Date().toISOString()};
+    res.json({success:true,version:'2.1.0',qualified,saved,model:'gemini-3.8-flash'});
+  }catch(e){
+    const msg=String(e.message||e); const isQuota=/429|quota|resource_exhausted|rate.?limit/i.test(msg);
+    if(isQuota){const until=new Date(Date.now()+WEB_SEARCH_QUOTA_COOLDOWN_MS).toISOString();webSearchHealth={...webSearchHealth,available:false,quotaUntil:until,reason:'QUOTA',lastError:msg,lastCheck:new Date().toISOString()};return res.status(429).json({success:false,code:'WEB_SEARCH_QUOTA',quota_blocked:true,quota_until:until,message:'⚠️ Gemini est actuellement en quota. La collecte multi-sources reste disponible sans IA.'});}
+    res.status(500).json({success:false,message:'Qualification Gemini impossible : '+msg.slice(0,600)});
+  }
+});
+
+// ================== FIN PROSPECTION WEB MULTI-SOURCES V2.1 ==================
+
 // ================== PROSPECTION WEB IA V2.0 ==================
 function cleanOpportunityUrl(value){
   const u=String(value||'').trim();
