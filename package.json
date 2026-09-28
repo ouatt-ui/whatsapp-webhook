@@ -1,7 +1,7 @@
 {
   "name": "visionprotection-whatsapp-crm",
-  "version": "2.1.0",
-  "description": "VisionProtection WhatsApp CRM V2.1 + prospection Web multi-sources + qualification Gemini",
+  "version": "2.1.1",
+  "description": "VisionProtection WhatsApp CRM V2.1.1 + prospection Web multi-sources optimisée + qualification Gemini",
   "main": "index.js",
   "scripts": {"start":"node index.js"},
   "engines": {"node": ">=18"},
