@@ -296,6 +296,44 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
   <div id="webOpportunitesListe" style="margin-top:14px;">Aucune recherche effectuée.</div>
 </section>
 
+
+<section class="panel" id="prospectionMultiV21">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+    <div>
+      <h2 style="margin:0">🌐 Moteur de Prospection Web Multi-Sources — V2.1</h2>
+      <div style="font-size:12px;color:#667085;margin-top:5px;">Collecte directe de sources publiques. Gemini intervient ensuite uniquement pour qualifier les candidats.</div>
+    </div>
+    <span id="v21Status" class="ia-status-pill">Prêt</span>
+  </div>
+  <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin-top:14px;">
+    <label style="font-size:12px;color:#667085;">Zone
+      <input id="v21Zone" value="Côte d’Ivoire, principalement Abidjan" style="width:100%;padding:9px;border:1px solid #ccd4df;border-radius:7px;">
+    </label>
+    <label style="font-size:12px;color:#667085;">Type
+      <select id="v21Type" style="width:100%;padding:9px;border:1px solid #ccd4df;border-radius:7px;background:white;">
+        <option>Tous</option><option>Appels d’offres</option><option>Immobilier</option><option>Public</option><option>Privé</option>
+      </select>
+    </label>
+    <label style="font-size:12px;color:#667085;">Service
+      <select id="v21Service" style="width:100%;padding:9px;border:1px solid #ccd4df;border-radius:7px;background:white;">
+        <option>Tous les services VisionProtection</option><option>Vidéosurveillance / CCTV</option><option>Contrôle d’accès</option><option>Alarme intrusion</option><option>SSI / CMSI / sécurité incendie</option><option>Motorisation de portail</option><option>Domotique</option><option>Réseau informatique / fibre / VLAN / Wi-Fi</option><option>Clôture électrique</option><option>Maintenance</option>
+      </select>
+    </label>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px;">
+    <label style="font-size:12px;color:#667085;">Candidats max
+      <input id="v21Max" type="number" min="5" max="30" value="15" style="width:80px;padding:9px;border:1px solid #ccd4df;border-radius:7px;">
+    </label>
+    <button class="primary" style="width:auto;margin-top:0" onclick="collecterProspectionV21()">🌐 Collecter sans Gemini</button>
+    <button class="secondary" style="width:auto;margin-top:0" onclick="qualifierProspectionV21()">🤖 Qualifier avec Gemini</button>
+    <button class="secondary" style="width:auto;margin-top:0" onclick="chargerCollectesV21()">↻ Actualiser</button>
+    <button class="secondary" style="width:auto;margin-top:0" onclick="afficherSourcesV21()">📚 Sources utilisées</button>
+  </div>
+  <div id="v21Info" style="margin-top:10px;font-size:13px;color:#667085;">La collecte fonctionne indépendamment du quota Gemini.</div>
+  <div id="v21Sources" style="display:none;margin-top:10px;padding:10px;background:#f7f9fc;border-radius:8px;font-size:12px;"></div>
+  <div id="v21Liste" style="margin-top:14px;">Aucun candidat collecté.</div>
+</section>
+
 <section class="panel" id="devisSuiviPanelV19">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
     <div>
@@ -1887,6 +1925,67 @@ async function lancerRapportIA() {
 }
 
 
+
+// ================== PROSPECTION WEB MULTI-SOURCES V2.1 ==================
+let candidatsProspectionV21=[];
+function renderCollectesV21(rows){
+  candidatsProspectionV21=rows||[];
+  const zone=document.getElementById('v21Liste'); if(!zone)return;
+  if(!candidatsProspectionV21.length){zone.innerHTML='<div style="padding:12px;background:#f7f9fc;border-radius:8px;color:#667085;">Aucun candidat collecté.</div>';return;}
+  zone.innerHTML=candidatsProspectionV21.map((c,i)=>`<div style="border:1px solid #dbe4ef;border-radius:11px;padding:12px;margin-bottom:9px;background:#fff;">
+    <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;"><div><strong>${escapeHtml(c.titre||'Candidat sans titre')}</strong><div style="font-size:12px;color:#667085;margin-top:4px;">${escapeHtml(c.source_nom||'Source web')} · ${escapeHtml(c.statut||'COLLECTEE')}</div></div><strong>🎯 ${Number(c.pertinence||0)}%</strong></div>
+    <div style="font-size:12px;color:#475467;margin-top:8px;line-height:1.5;">${escapeHtml(c.extrait||'Aucun extrait disponible.')}</div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:9px;">
+      <a href="${escapeHtml(c.url_cible||c.url_source||'#')}" target="_blank" rel="noopener" style="padding:7px 10px;background:#edf2f8;border-radius:7px;text-decoration:none;color:#172033;">🌐 Ouvrir</a>
+      ${c.id?`<button type="button" onclick="qualifierUnCandidatV21(${Number(c.id)})" style="background:#0b3d91;color:white;padding:7px 10px;">🤖 Qualifier</button>`:''}
+    </div>
+  </div>`).join('');
+}
+async function chargerSourcesV21(){
+  const d=await fetchJsonV202('/robot/prospection-sources');
+  return d.sources||[];
+}
+async function afficherSourcesV21(){
+  const box=document.getElementById('v21Sources'); if(!box)return;
+  if(box.style.display==='block'){box.style.display='none';return;}
+  try{const sources=await chargerSourcesV21();box.innerHTML='<strong>Sources configurées :</strong><br>'+sources.map(s=>`• <strong>${escapeHtml(s.nom)}</strong> — ${escapeHtml(s.url)}`).join('<br>');box.style.display='block';}catch(e){box.innerHTML='❌ '+escapeHtml(e.message);box.style.display='block';}
+}
+async function collecterProspectionV21(){
+  const status=document.getElementById('v21Status'),info=document.getElementById('v21Info');
+  if(status){status.className='ia-status-pill';status.textContent='⏳ Collecte...';}
+  try{
+    const body={zone:document.getElementById('v21Zone')?.value||'',type:document.getElementById('v21Type')?.value||'Tous',service:document.getElementById('v21Service')?.value||'',max_results:Number(document.getElementById('v21Max')?.value||15)};
+    const d=await fetchJsonV202('/robot/prospection-collecte',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    await chargerCollectesV21();
+    if(status){status.className='ia-status-pill ok';status.textContent='🟢 Collecte terminée';}
+    if(info)info.textContent=`${d.count||0} candidat(s) collecté(s) depuis ${d.sources_testees||0} source(s), sans utiliser Gemini. ${d.saved||0} nouveau(x) en base.`+(d.errors?.length?' Certaines sources ont répondu avec une erreur.':'');
+  }catch(e){if(status){status.className='ia-status-pill fallback';status.textContent='⚠️ Erreur collecte';}if(info)info.textContent='❌ '+e.message;}
+}
+async function chargerCollectesV21(){
+  try{const d=await fetchJsonV202('/robot/prospection-collectes?limit=50');renderCollectesV21(d.candidats||[]);if(document.getElementById('v21Info')&&!candidatsProspectionV21.length)document.getElementById('v21Info').textContent='Aucun candidat sauvegardé pour le moment.';}catch(e){document.getElementById('v21Liste').innerHTML='<div style="color:#b42318;">❌ '+escapeHtml(e.message)+'</div>';}
+}
+async function qualifierUnCandidatV21(id){
+  const c=candidatsProspectionV21.find(x=>String(x.id)===String(id));if(!c)return;
+  await qualifierProspectionV21([c]);
+}
+async function qualifierProspectionV21(selected=null){
+  const info=document.getElementById('v21Info'),status=document.getElementById('v21Status');
+  const candidates=selected||candidatsProspectionV21.filter(x=>x.statut==='COLLECTEE').slice(0,10);
+  if(!candidates.length){alert('Aucun candidat collecté à qualifier. Lancez d’abord la collecte.');return;}
+  if(status){status.className='ia-status-pill';status.textContent='⏳ Qualification Gemini...';}
+  try{
+    const d=await fetchJsonV202('/robot/prospection-qualifier',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({candidats:candidates})});
+    await chargerCollectesV21();
+    if(status){status.className='ia-status-pill ok';status.textContent='🟢 Qualification terminée';}
+    if(info)info.textContent=`Gemini a qualifié ${d.qualified?.filter(x=>x.qualifie).length||0} candidat(s). ${d.saved||0} opportunité(s) ajoutée(s) à la veille.`;
+  }catch(e){
+    const quota=/429|quota|resource_exhausted/i.test(String(e.message||e));
+    if(status){status.className='ia-status-pill fallback';status.textContent=quota?'🔴 Quota Gemini':'⚠️ Erreur IA';}
+    if(info)info.innerHTML=quota?'🔴 <strong>Gemini est en quota.</strong> La collecte multi-sources continue de fonctionner sans IA.':'❌ '+escapeHtml(e.message);
+  }
+}
+// ================== FIN PROSPECTION WEB MULTI-SOURCES V2.1 ==================
+
 // ================== PROSPECTION WEB IA V2.0 ==================
 let opportunitesWebV20=[];
 function badgeTypeWebV20(type){
@@ -1966,7 +2065,7 @@ async function rechercherOpportunitesWebV20(){
   const btns=document.querySelectorAll('#prospectionWebV20 button');
   btns.forEach(b=>b.disabled=true);
   if(status){status.className='ia-status-pill';status.textContent='⏳ Recherche web...';}
-  if(info)info.textContent='Gemini utilise Google Search pour rechercher et qualifier les opportunités. Budget local V2.0.3 : maximum 10 résultats, 5 par défaut.';
+  if(info)info.textContent='Gemini utilise Google Search pour rechercher et qualifier les opportunités. Budget local V2.0.4 : maximum 10 résultats, 5 par défaut.';
   try{
     const body={
       zone:document.getElementById('webZone')?.value||'',
@@ -1983,7 +2082,7 @@ async function rechercherOpportunitesWebV20(){
     if(info)info.textContent=`${data.count||0} opportunité(s) trouvée(s), ${data.saved||0} enregistrée(s) dans la veille. Source : Google Search + Gemini.`;
     await verifierEtatGoogleSearchV201();
   }catch(error){
-    console.error('Prospection Web IA V2.0.1',error);
+    console.error('Prospection Web IA V2.1',error);
     if(error.code==='WEB_SEARCH_QUOTA'||error.code==='WEB_SEARCH_QUOTA_COOLDOWN'){
       if(status){status.className='ia-status-pill fallback';status.textContent='🔴 Quota Gemini';}
       if(info)info.innerHTML='⚠️ <strong>Prospection Web temporairement bloquée.</strong> '+escapeHtml(error.message)+'<br><span style="color:#667085">Le chatbot WhatsApp, le CRM et les devis restent opérationnels.</span>';
@@ -2426,7 +2525,7 @@ function escapeHtml(s){return String(s).replaceAll("&","&amp;").replaceAll("<","
 loadData();
 loadDashboardV14();
 chargerSuiviDevisV19();
-verifierBackendV202().then(()=>{chargerOpportunitesWebV20();chargerEtatWebSearchV204();});
+verifierBackendV202().then(()=>{chargerOpportunitesWebV20();chargerEtatWebSearchV204();chargerCollectesV21();});
 </script>
 </body>
 </html>
