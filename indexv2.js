@@ -1802,7 +1802,7 @@ try {
 
 // ================== FIN ROBOT IA COMMERCIAL ==================
 
-// ================== PROSPECTION WEB MULTI-SOURCES V2.1 ==================
+// ================== PROSPECTION WEB MULTI-SOURCES V2.1.1 ==================
 const PROSPECTION_SOURCES_V21 = [
   {id:'DGMP', nom:'DGMP — Marchés publics Côte d’Ivoire', type:'APPEL_OFFRES', url:'https://marchespublics.ci/accueil/home'},
   {id:'DGMP_PPM_2026', nom:'DGMP — Plans de passation 2026', type:'APPEL_OFFRES', url:'https://marchespublics.ci/plan_passation/an/PPM/2026'},
@@ -1812,6 +1812,10 @@ const PROSPECTION_SOURCES_V21 = [
   {id:'S3I', nom:'S3I — Promoteur immobilier et constructeur', type:'IMMOBILIER', url:'https://www.s3i.ci/'},
   {id:'UNGM', nom:'UNGM — United Nations Global Marketplace', type:'PUBLIC', url:'https://www.ungm.org/Public/Notice'}
 ];
+
+const PROSPECTION_V21_TIMEOUT_MS = 6500;
+const PROSPECTION_V21_MAX_HTML = 2 * 1024 * 1024;
+const PROSPECTION_V21_CONCURRENCY = 4;
 
 function getProspectionSourcesV21(){ return PROSPECTION_SOURCES_V21.map(x=>({...x})); }
 function stripHtmlV21(html){
@@ -1832,39 +1836,55 @@ function absUrlV21(base,href){
     return u.toString();
   }catch(_){return '';}
 }
+function normalizeSearchTextV21(v){
+  return String(v||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+}
 function scoreCandidateV21(title,url,text,service,type){
-  const hay=(title+' '+url+' '+text+' '+service+' '+type).toLowerCase();
-  const words=['appel d’offres','appel d offres','avis d’appel','avis de consultation','demande de cotation','marché','fournisseur','prestataire','consultation','projet','programme immobilier','construction','promoteur','sécurité','vidéosurveillance','cctv','contrôle d’accès','alarme','incendie','ssi','cmsi','réseau','fibre','wifi','portail','domotique','maintenance'];
+  const hay=normalizeSearchTextV21(title+' '+url+' '+text+' '+service+' '+type);
+  const words=['appel d’offres','appel d offres','avis d’appel','avis de consultation','demande de cotation','marche','fournisseur','prestataire','consultation','projet','programme immobilier','construction','promoteur','securite','videosurveillance','cctv','controle d’acces','alarme','incendie','ssi','cmsi','reseau','fibre','wifi','portail','domotique','maintenance'];
   let score=0;
-  for(const w of words) if(hay.includes(w)) score+=6;
-  if(service && service!=='Tous les services VisionProtection' && hay.includes(service.toLowerCase())) score+=15;
-  if(type && type!=='Tous' && ((type==='Appels d’offres'&&/appel|marché|consultation|cotation/.test(hay)) || (type==='Immobilier'&&/immobili|construction|promoteur|programme/.test(hay)) || (type==='Public'&&/gouv|ministere|mairie|public|administration|un/.test(hay)) || (type==='Privé'&&/entreprise|société|prive|privé/.test(hay)))) score+=12;
+  for(const w of words) if(hay.includes(normalizeSearchTextV21(w))) score+=6;
+  if(service && service!=='Tous les services VisionProtection' && hay.includes(normalizeSearchTextV21(service))) score+=15;
+  if(type && type!=='Tous' && ((type==='Appels d’offres'&&/appel|marche|consultation|cotation/.test(hay)) || (type==='Immobilier'&&/immobili|construction|promoteur|programme/.test(hay)) || (type==='Public'&&/gouv|ministere|mairie|public|administration|un/.test(hay)) || (type==='Privé'&&/entreprise|societe|prive/.test(hay)))) score+=12;
   if(/\.(pdf|docx?|xlsx?)($|\?)/i.test(url)) score+=8;
   return Math.max(0,Math.min(100,score));
 }
 function classifySourceTypeV21(src,title,text){
-  const h=(src.type+' '+src.nom+' '+title+' '+text).toLowerCase();
-  if(/appel|marché|consultation|ppm|ungm/.test(h)) return 'APPEL_OFFRES';
+  const h=normalizeSearchTextV21(src.type+' '+src.nom+' '+title+' '+text);
+  if(/appel|marche|consultation|ppm|ungm/.test(h)) return 'APPEL_OFFRES';
   if(/immobili|construction|promoteur|programme/.test(h)) return 'IMMOBILIER';
   if(/public|gouv|ministere|administration/.test(h)) return 'PUBLIC';
   return src.type||'AUTRE';
 }
 function extractLinksV21(html,baseUrl){
-  const out=[];
+  const out=[]; const seen=new Set();
   const re=/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
   let m;
   while((m=re.exec(String(html||'')))!==null){
     const url=absUrlV21(baseUrl,m[1]);
-    if(!url) continue;
+    if(!url || seen.has(url)) continue;
     const title=stripHtmlV21(m[2]).slice(0,500);
     if(!title) continue;
-    out.push({url,title});
+    seen.add(url); out.push({url,title});
   }
   return out;
 }
+function excerptAroundV21(bodyText,title){
+  const body=String(bodyText||'');
+  const cleanTitle=String(title||'').replace(/\s+/g,' ').trim();
+  const normalizedBody=normalizeSearchTextV21(body);
+  const normalizedTitle=normalizeSearchTextV21(cleanTitle).slice(0,100);
+  let pos=normalizedTitle.length>=8 ? normalizedBody.indexOf(normalizedTitle) : -1;
+  if(pos<0){
+    const keys=['appel d offres','avis de consultation','demande de cotation','programme immobilier','projet','prestataire','fournisseur','videosurveillance','controle d acces','alarme','incendie','construction'];
+    for(const k of keys){ const i=normalizedBody.indexOf(k); if(i>=0){pos=i;break;} }
+  }
+  if(pos<0) return body.slice(0,650);
+  return body.slice(Math.max(0,pos-220),Math.min(body.length,pos+950));
+}
 function buildSourceCandidateV21(src,link,bodyText,service,type){
   const title=link.title||src.nom;
-  const excerpt=bodyText.slice(0,1200);
+  const excerpt=excerptAroundV21(bodyText,title).slice(0,1200);
   return {
     source_id:src.id, source_nom:src.nom, url_source:src.url,
     titre:title, url_cible:link.url, extrait:excerpt,
@@ -1872,8 +1892,34 @@ function buildSourceCandidateV21(src,link,bodyText,service,type){
     type_opportunite:classifySourceTypeV21(src,title,excerpt)
   };
 }
+async function fetchProspectionSourceV21(src){
+  const started=Date.now();
+  try{
+    const r=await axios.get(src.url,{
+      timeout:PROSPECTION_V21_TIMEOUT_MS,
+      maxContentLength:PROSPECTION_V21_MAX_HTML,
+      maxBodyLength:PROSPECTION_V21_MAX_HTML,
+      decompress:true,
+      headers:{'User-Agent':'VisionProtection-Prospection/2.1.1','Accept':'text/html,application/xhtml+xml,application/pdf;q=0.9,*/*;q=0.8','Accept-Language':'fr-FR,fr;q=0.9,en;q=0.7'}
+    });
+    const html=String(r.data||'');
+    const text=stripHtmlV21(html).slice(0,90000);
+    const links=extractLinksV21(html,src.url);
+    return {ok:true,src,html,text,links,duration_ms:Date.now()-started};
+  }catch(e){
+    return {ok:false,src,error:String(e.message||e).slice(0,250),duration_ms:Date.now()-started};
+  }
+}
+async function mapWithConcurrencyV21(items,limit,worker){
+  const out=new Array(items.length); let next=0;
+  async function runner(){
+    while(true){ const i=next++; if(i>=items.length) return; out[i]=await worker(items[i],i); }
+  }
+  await Promise.all(Array.from({length:Math.min(limit,items.length)},()=>runner()));
+  return out;
+}
 
-app.get('/robot/prospection-sources',(req,res)=>res.json({success:true,version:'2.1.0',sources:getProspectionSourcesV21()}));
+app.get('/robot/prospection-sources',(req,res)=>res.json({success:true,version:'2.1.1',sources:getProspectionSourcesV21(),timeout_ms:PROSPECTION_V21_TIMEOUT_MS,concurrency:PROSPECTION_V21_CONCURRENCY}));
 
 app.post('/robot/prospection-collecte',async(req,res)=>{
   const zone=String(req.body?.zone||'Côte d’Ivoire, principalement Abidjan').trim();
@@ -1883,20 +1929,19 @@ app.post('/robot/prospection-collecte',async(req,res)=>{
   const ids=Array.isArray(req.body?.sources)&&req.body.sources.length?req.body.sources.map(String):PROSPECTION_SOURCES_V21.map(x=>x.id);
   const selected=PROSPECTION_SOURCES_V21.filter(x=>ids.includes(x.id));
   const results=[]; const errors=[];
-  for(const src of selected){
-    try{
-      const r=await axios.get(src.url,{timeout:12000,maxContentLength:4*1024*1024,headers:{'User-Agent':'VisionProtection-Prospection/2.1'}});
-      const html=String(r.data||'');
-      const text=stripHtmlV21(html);
-      const links=extractLinksV21(html,src.url);
-      // Toujours conserver la page source comme candidat de veille si elle contient des termes pertinents.
-      const pageScore=scoreCandidateV21(src.nom,src.url,text,service,type);
-      if(pageScore>=10) results.push(buildSourceCandidateV21(src,{url:src.url,title:src.nom},text,service,type));
-      for(const link of links){
-        const sc=scoreCandidateV21(link.title,link.url,text.slice(0,1800),service,type);
-        if(sc>=12) results.push(buildSourceCandidateV21(src,link,text,service,type));
-      }
-    }catch(e){ errors.push({source:src.nom,message:String(e.message||e).slice(0,250)}); }
+  const fetched=await mapWithConcurrencyV21(selected,PROSPECTION_V21_CONCURRENCY,fetchProspectionSourceV21);
+  for(const item of fetched){
+    if(!item.ok){ errors.push({source:item.src.nom,message:item.error,duration_ms:item.duration_ms}); continue; }
+    const {src,text,links}=item;
+    const pageScore=scoreCandidateV21(src.nom,src.url,text,service,type);
+    if(pageScore>=10) results.push(buildSourceCandidateV21(src,{url:src.url,title:src.nom},text,service,type));
+    // Limiter le nombre de liens analysés par source pour garder une réponse rapide.
+    const relevantLinks=links
+      .map(link=>({...link,score:scoreCandidateV21(link.title,link.url,text.slice(0,1800),service,type)}))
+      .filter(x=>x.score>=12)
+      .sort((a,b)=>b.score-a.score)
+      .slice(0,35);
+    for(const link of relevantLinks) results.push(buildSourceCandidateV21(src,link,text,service,type));
   }
   const unique=new Map();
   for(const x of results){
@@ -1910,10 +1955,10 @@ app.post('/robot/prospection-collecte',async(req,res)=>{
       try{
         const [r]=await pool.query(`INSERT INTO prospection_web_collectes(source_id,source_nom,url_source,titre,url_cible,extrait,pertinence,statut) VALUES(?,?,?,?,?,?,?,'COLLECTEE') ON DUPLICATE KEY UPDATE titre=VALUES(titre),source_nom=VALUES(source_nom),extrait=VALUES(extrait),pertinence=VALUES(pertinence),updated_at=CURRENT_TIMESTAMP`,[c.source_id,c.source_nom,c.url_source,c.titre,c.url_cible,c.extrait,c.pertinence]);
         saved+=Number(r.affectedRows||0)>0?1:0;
-      }catch(e){console.warn('⚠️ collecte V2.1',e.message);}
+      }catch(e){console.warn('⚠️ collecte V2.1.1',e.message);}
     }
   }
-  res.json({success:true,version:'2.1.0',zone,type,service,sources_testees:selected.length,count:rows.length,saved,errors,candidats:rows.map(x=>({...x,statut:'COLLECTEE'})),message:`${rows.length} candidat(s) collecté(s) sans utiliser Gemini.`});
+  res.json({success:true,version:'2.1.1',zone,type,service,sources_testees:selected.length,count:rows.length,saved,errors,candidats:rows.map(x=>({...x,statut:'COLLECTEE'})),performance:{timeout_ms:PROSPECTION_V21_TIMEOUT_MS,concurrency:PROSPECTION_V21_CONCURRENCY,parallel:true},message:`${rows.length} candidat(s) collecté(s) sans utiliser Gemini.`});
 });
 
 app.get('/robot/prospection-collectes',async(req,res)=>{
@@ -1946,7 +1991,7 @@ app.post('/robot/prospection-qualifier',async(req,res)=>{
       }
     }
     webSearchHealth={...webSearchHealth,available:true,lastCheck:new Date().toISOString(),lastError:null,reason:null,searches:webSearchHealth.searches+1,lastSearchAt:new Date().toISOString()};
-    res.json({success:true,version:'2.1.0',qualified,saved,model:'gemini-3.8-flash'});
+    res.json({success:true,version:'2.1.1',qualified,saved,model:'gemini-3.8-flash'});
   }catch(e){
     const msg=String(e.message||e); const isQuota=/429|quota|resource_exhausted|rate.?limit/i.test(msg);
     if(isQuota){const until=new Date(Date.now()+WEB_SEARCH_QUOTA_COOLDOWN_MS).toISOString();webSearchHealth={...webSearchHealth,available:false,quotaUntil:until,reason:'QUOTA',lastError:msg,lastCheck:new Date().toISOString()};return res.status(429).json({success:false,code:'WEB_SEARCH_QUOTA',quota_blocked:true,quota_until:until,message:'⚠️ Gemini est actuellement en quota. La collecte multi-sources reste disponible sans IA.'});}
@@ -2607,5 +2652,5 @@ app.post('/crm/devis/export/pdf', async (req,res)=>{
 
 // ================== FIN DEVIS V1.8 ==================
 
-async function start(){await initDatabase();app.listen(PORT,"0.0.0.0",()=>console.log(`VisionProtection WhatsApp CRM v2.5.4 V1.9 - port ${PORT} - DB ${dbReady?"MYSQL":"MEMORY"}`));}
+async function start(){await initDatabase();app.listen(PORT,"0.0.0.0",()=>console.log(`VisionProtection WhatsApp CRM v2.5.4 V2.1.1 - port ${PORT} - DB ${dbReady?"MYSQL":"MEMORY"}`));}
 start().catch(e=>{console.error("❌ ERREUR DÉMARRAGE :",e.message);process.exit(1);});
