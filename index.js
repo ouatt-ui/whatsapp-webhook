@@ -71,7 +71,7 @@ function sleep(ms) {
 
 function getGeminiModelsV221(){
   const primary=String(process.env.GEMINI_MODEL||'gemini-3.8-flash').trim();
-  const fallback=String(process.env.GEMINI_FALLBACK_MODEL||'gemini-2.5-flash').trim();
+  const fallback=String(process.env.GEMINI_FALLBACK_MODEL||'gemini-3.7-flash').trim();
   return {primary,fallback:fallback && fallback!==primary?fallback:null};
 }
 
@@ -200,6 +200,9 @@ const PHONE_NUMBER_ID=process.env.WHATSAPP_PHONE_NUMBER_ID||"";
 const GRAPH_VERSION="v26.0";
 const WHATSAPP_API_URL=`https://graph.facebook.com/${GRAPH_VERSION}/${PHONE_NUMBER_ID}/messages`;
 const sessions=new Map();
+
+// File de qualification IA V2.2.2 : les requêtes HTTP ne restent plus bloquées par Gemini.
+const prospectionAiJobsV222=new Map();
 
 const dbConfig={
  host:process.env.DB_HOST||process.env.Host,
@@ -1962,7 +1965,7 @@ async function mapWithConcurrencyV21(items,limit,worker){
   return out;
 }
 
-app.get('/robot/prospection-sources',(req,res)=>res.json({success:true,version:'2.2.1',country_scope:PROSPECTION_COUNTRY_V22,sources:getProspectionSourcesV21(),timeout_ms:PROSPECTION_V21_TIMEOUT_MS,concurrency:PROSPECTION_V21_CONCURRENCY}));
+app.get('/robot/prospection-sources',(req,res)=>res.json({success:true,version:'2.2.2',country_scope:PROSPECTION_COUNTRY_V22,sources:getProspectionSourcesV21(),timeout_ms:PROSPECTION_V21_TIMEOUT_MS,concurrency:PROSPECTION_V21_CONCURRENCY}));
 
 app.post('/robot/prospection-collecte',async(req,res)=>{
   const zone=PROSPECTION_COUNTRY_V22;
@@ -2001,16 +2004,16 @@ app.post('/robot/prospection-collecte',async(req,res)=>{
       }catch(e){console.warn('⚠️ collecte V2.1.1',e.message);}
     }
   }
-  res.json({success:true,version:'2.2.1',country_scope:PROSPECTION_COUNTRY_V22,zone,type,service,sources_testees:selected.length,count:rows.length,saved,errors,candidats:rows.map(x=>({...x,statut:'COLLECTEE'})),performance:{timeout_ms:PROSPECTION_V21_TIMEOUT_MS,concurrency:PROSPECTION_V21_CONCURRENCY,parallel:true},message:`${rows.length} candidat(s) collecté(s) sans utiliser Gemini.`});
+  res.json({success:true,version:'2.2.2',country_scope:PROSPECTION_COUNTRY_V22,zone,type,service,sources_testees:selected.length,count:rows.length,saved,errors,candidats:rows.map(x=>({...x,statut:'COLLECTEE'})),performance:{timeout_ms:PROSPECTION_V21_TIMEOUT_MS,concurrency:PROSPECTION_V21_CONCURRENCY,parallel:true},message:`${rows.length} candidat(s) collecté(s) sans utiliser Gemini.`});
 });
 
 app.get('/robot/prospection-collectes',async(req,res)=>{
-  if(!dbReady||!pool) return res.json({success:true,candidats:[],database:'memory',country_scope:PROSPECTION_COUNTRY_V22});
+  if(!dbReady||!pool) return res.json({success:true,version:'2.2.2',candidats:[],database:'memory',country_scope:PROSPECTION_COUNTRY_V22});
   const limit=Math.max(1,Math.min(100,Number(req.query.limit||50)));
   const fetchLimit=Math.min(300,Math.max(limit,limit*3));
   const [rawRows]=await pool.query(`SELECT id,source_id,source_nom,url_source,titre,url_cible,extrait,pertinence,statut,created_at FROM prospection_web_collectes ORDER BY pertinence DESC,created_at DESC LIMIT ${fetchLimit}`);
   const rows=filterProspectionV22(rawRows).slice(0,limit);
-  res.json({success:true,version:'2.2.1',country_scope:PROSPECTION_COUNTRY_V22,candidats:rows});
+  res.json({success:true,version:'2.2.2',country_scope:PROSPECTION_COUNTRY_V22,candidats:rows});
 });
 
 app.delete('/robot/prospection-collectes/:id',async(req,res)=>{
@@ -2033,7 +2036,7 @@ app.post('/robot/prospection-nettoyer-sources-retirees',async(req,res)=>{
   );
   res.json({
     success:true,
-    version:'2.2.1',
+    version:'2.2.2',
     country_scope:PROSPECTION_COUNTRY_V22,
     collectes_supprimees:Number(collectes.affectedRows||0),
     opportunites_supprimees:Number(opportunites.affectedRows||0),
@@ -2041,13 +2044,14 @@ app.post('/robot/prospection-nettoyer-sources-retirees',async(req,res)=>{
   });
 });
 
-app.post('/robot/prospection-qualifier',async(req,res)=>{
-  if(!gemini) return res.status(503).json({success:false,code:'GEMINI_NOT_CONFIGURED',message:'GEMINI_API_KEY non configurée.'});
-  if(webSearchQuotaActive()) return res.status(429).json({success:false,code:'WEB_SEARCH_QUOTA_COOLDOWN',quota_blocked:true,quota_until:webSearchHealth.quotaUntil,message:webSearchQuotaMessage()});
-  const candidates=Array.isArray(req.body?.candidats)?filterCommercialProspectionV221(filterProspectionV22(req.body.candidats)).slice(0,10):[];
-  if(!candidates.length) return res.status(400).json({success:false,message:'Aucun candidat à qualifier.'});
-  const prompt=`Tu es l’agent de qualification commerciale de VisionProtection & Informatique. Qualifie uniquement les candidats web fournis ci-dessous. Ne fabrique aucune information. Un candidat est une opportunité seulement si la source indique un projet, marché, consultation, besoin de prestataire, programme immobilier ou organisation pertinente. Réponds uniquement en JSON valide sous forme de tableau. Champs: index,qualifie,type_opportunite,titre,organisation,ville,service,description,date_limite,pertinence,resume.\n\nCANDIDATS:\n${JSON.stringify(candidates,null,2)}`;
+async function executeProspectionQualificationV222(jobId,candidates){
+  const job=prospectionAiJobsV222.get(jobId);
+  if(job) Object.assign(job,{status:'EN_COURS',started_at:new Date().toISOString()});
   try{
+    if(!gemini) throw Object.assign(new Error('GEMINI_API_KEY non configurée.'),{geminiType:'NOT_CONFIGURED'});
+    if(webSearchQuotaActive()) throw Object.assign(new Error('Quota Gemini temporairement actif.'),{geminiType:'QUOTA'});
+
+    const prompt=`Tu es l’agent de qualification commerciale de VisionProtection & Informatique. Qualifie uniquement les candidats web fournis ci-dessous. Ne fabrique aucune information. Un candidat est une opportunité seulement si la source indique un projet, marché, consultation, besoin de prestataire, programme immobilier ou organisation pertinente. Réponds uniquement en JSON valide sous forme de tableau. Champs: index,qualifie,type_opportunite,titre,organisation,ville,service,description,date_limite,pertinence,resume.\n\nCANDIDATS:\n${JSON.stringify(candidates,null,2)}`;
     const response=await callGemini(prompt,{max503Retries:1});
     const parsed=extractJsonFromGemini(response.text||'');
     if(!parsed) throw new Error('Réponse Gemini non interprétable.');
@@ -2063,15 +2067,45 @@ app.post('/robot/prospection-qualifier',async(req,res)=>{
         await pool.query(`UPDATE prospection_web_collectes SET statut='QUALIFIEE' WHERE id=?`,[c.id]).catch(()=>{});
       }
     }
-    webSearchHealth={...webSearchHealth,available:true,lastCheck:new Date().toISOString(),lastError:null,reason:null,searches:webSearchHealth.searches+1,lastSearchAt:new Date().toISOString()};
-    res.json({success:true,version:'2.2.1',country_scope:PROSPECTION_COUNTRY_V22,qualified,saved,model:response.model,ai_fallback:Boolean(response.fallback),commercial_filter:true});
+    const result={success:true,version:'2.2.2',country_scope:PROSPECTION_COUNTRY_V22,qualified,saved,model:response.model,ai_fallback:Boolean(response.fallback),commercial_filter:true};
+    if(job) Object.assign(job,{status:'TERMINEE',finished_at:new Date().toISOString(),result,error:null});
+    return result;
   }catch(e){
-    const msg=String(e.message||e); const isQuota=/429|quota|resource_exhausted|rate.?limit/i.test(msg);
-    const isUnavailable=e?.geminiType==='UNAVAILABLE'||/503|unavailable|high demand|overloaded|temporairement indisponible/i.test(msg);
-    if(isQuota){const until=new Date(Date.now()+WEB_SEARCH_QUOTA_COOLDOWN_MS).toISOString();webSearchHealth={...webSearchHealth,available:false,quotaUntil:until,reason:'QUOTA',lastError:msg,lastCheck:new Date().toISOString()};return res.status(429).json({success:false,code:'WEB_SEARCH_QUOTA',quota_blocked:true,quota_until:until,message:'⚠️ Gemini est actuellement en quota. La collecte multi-sources reste disponible sans IA.'});}
-    if(isUnavailable) return res.status(503).json({success:false,code:'GEMINI_UNAVAILABLE',version:'2.2.1',retryable:true,message:'Gemini est temporairement indisponible après les tentatives et le modèle de secours. Les candidats collectés sont conservés.'});
-    res.status(500).json({success:false,message:'Qualification Gemini impossible : '+msg.slice(0,600)});
+    const msg=String(e.message||e);
+    const type=e?.geminiType || (webSearchQuotaActive()?'QUOTA':/503|unavailable|high demand|overloaded|temporairement indisponible/i.test(msg)?'UNAVAILABLE':/401|403|api key|permission/i.test(msg)?'AUTH':'OTHER');
+    const result={success:false,version:'2.2.2',code:type==='UNAVAILABLE'?'GEMINI_UNAVAILABLE':type==='QUOTA'?'GEMINI_QUOTA':'GEMINI_ERROR',retryable:type==='UNAVAILABLE'||type==='QUOTA',message:type==='UNAVAILABLE'?'Gemini temporairement indisponible. Les candidats collectés sont conservés pour une nouvelle tentative.':type==='QUOTA'?'Quota Gemini temporairement atteint. Les candidats collectés sont conservés.':msg.slice(0,600)};
+    if(job) Object.assign(job,{status:type==='UNAVAILABLE'||type==='QUOTA'?'EN_ATTENTE':'ERREUR',finished_at:new Date().toISOString(),result,error:msg.slice(0,600)});
+    return result;
   }
+}
+
+app.post('/robot/prospection-qualifier',async(req,res)=>{
+  if(!gemini) return res.status(503).json({success:false,code:'GEMINI_NOT_CONFIGURED',message:'GEMINI_API_KEY non configurée.'});
+  const candidates=Array.isArray(req.body?.candidats)?filterCommercialProspectionV221(filterProspectionV22(req.body.candidats)).slice(0,10):[];
+  if(!candidates.length) return res.status(400).json({success:false,message:'Aucun candidat à qualifier.'});
+
+  const jobId=`ai-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+  const job={job_id:jobId,status:'EN_ATTENTE',created_at:new Date().toISOString(),candidate_count:candidates.length,result:null,error:null};
+  prospectionAiJobsV222.set(jobId,job);
+
+  // On répond immédiatement au navigateur. La qualification continue en arrière-plan.
+  setImmediate(()=>{
+    executeProspectionQualificationV222(jobId,candidates).catch(err=>{
+      const j=prospectionAiJobsV222.get(jobId);
+      if(j) Object.assign(j,{status:'ERREUR',finished_at:new Date().toISOString(),error:String(err?.message||err)});
+      console.error('❌ Job qualification V2.2.2',err);
+    });
+  });
+
+  // Nettoyage mémoire : conserver les derniers jobs pendant 30 minutes.
+  setTimeout(()=>prospectionAiJobsV222.delete(jobId),30*60*1000).unref?.();
+  return res.status(202).json({success:true,version:'2.2.2',async:true,job_id:jobId,status:'EN_ATTENTE',candidate_count:candidates.length,message:`Qualification IA démarrée pour ${candidates.length} candidat(s). La collecte reste disponible pendant le traitement.`});
+});
+
+app.get('/robot/prospection-qualifier/:jobId',async(req,res)=>{
+  const job=prospectionAiJobsV222.get(String(req.params.jobId));
+  if(!job) return res.status(404).json({success:false,code:'JOB_NOT_FOUND',message:'Job de qualification introuvable ou expiré.'});
+  return res.json({success:true,version:'2.2.2',job});
 });
 
 app.delete('/crm/opportunites-web/:id',async(req,res)=>{
