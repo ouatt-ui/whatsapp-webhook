@@ -69,8 +69,15 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function getGeminiModelsV221(){
+  const primary=String(process.env.GEMINI_MODEL||'gemini-3.8-flash').trim();
+  const fallback=String(process.env.GEMINI_FALLBACK_MODEL||'gemini-2.5-flash').trim();
+  return {primary,fallback:fallback && fallback!==primary?fallback:null};
+}
+
 async function callGemini(prompt, options = {}) {
   const max503Retries = Number.isInteger(options.max503Retries) ? options.max503Retries : 1;
+  const models=getGeminiModelsV221();
 
   if (!gemini) {
     geminiHealth = {
@@ -82,65 +89,46 @@ async function callGemini(prompt, options = {}) {
     throw new Error("Client Gemini non initialisé.");
   }
 
-  for (let attempt = 0; attempt <= max503Retries; attempt++) {
-    try {
-      console.log(`🤖 Appel Gemini V1.3 (tentative ${attempt + 1}/${max503Retries + 1})...`);
+  const candidates=[models.primary, models.fallback].filter(Boolean);
+  let lastError=null;
 
-      const response = await gemini.models.generateContent({
-        model: "gemini-3.8-flash",
-        contents: prompt
-      });
+  for(const model of candidates){
+    for (let attempt = 0; attempt <= max503Retries; attempt++) {
+      try {
+        console.log(`🤖 Appel Gemini V2.2.1 modèle=${model} (tentative ${attempt + 1}/${max503Retries + 1})...`);
+        const response = await gemini.models.generateContent({model,contents:prompt});
+        geminiHealth = {...geminiHealth,available:true,lastCheck:new Date().toISOString(),reason:null,model};
+        console.log(`✅ Gemini a répondu avec ${model}.`);
+        return {text: response.text || "",model,ai_available:true,fallback:model!==models.primary};
+      } catch (error) {
+        lastError=error;
+        const type = classifyGeminiError(error);
+        const message = error?.message || String(error);
+        console.error(`❌ ERREUR GEMINI ${model}:`, message);
+        geminiHealth = {...geminiHealth,available:false,lastCheck:new Date().toISOString(),reason:type,model};
 
-      geminiHealth = {
-        ...geminiHealth,
-        available: true,
-        lastCheck: new Date().toISOString(),
-        reason: null
-      };
-
-      console.log("✅ Gemini a répondu.");
-
-      return {
-        text: response.text || "",
-        model: "gemini-3.8-flash",
-        ai_available: true,
-        fallback: false
-      };
-
-    } catch (error) {
-      const type = classifyGeminiError(error);
-      const message = error?.message || String(error);
-
-      console.error("❌ ERREUR GEMINI :", message);
-
-      geminiHealth = {
-        ...geminiHealth,
-        available: false,
-        lastCheck: new Date().toISOString(),
-        reason: type
-      };
-
-      if (type === "QUOTA") {
-        throw new Error(
-          "QUOTA GEMINI ATTEINT. Le Robot IA repassera automatiquement en mode secours jusqu'à la réinitialisation du quota."
-        );
+        if (type === "QUOTA") {
+          throw new Error("QUOTA GEMINI ATTEINT. La qualification IA est temporairement indisponible.");
+        }
+        if (type === "UNAVAILABLE" && attempt < max503Retries) {
+          console.log("⏳ Gemini temporairement indisponible. Nouvelle tentative dans 3 secondes...");
+          await sleep(3000);
+          continue;
+        }
+        if (type === "UNAVAILABLE") {
+          if(model!==models.primary) break;
+          console.log(`⚠️ ${models.primary} indisponible après retries. Tentative du modèle de secours: ${models.fallback||'aucun'}.`);
+          break;
+        }
+        throw error;
       }
-
-      if (type === "UNAVAILABLE" && attempt < max503Retries) {
-        console.log("⏳ Gemini temporairement indisponible. Nouvelle tentative dans 3 secondes...");
-        await sleep(3000);
-        continue;
-      }
-
-      if (type === "UNAVAILABLE") {
-        throw new Error(
-          "GEMINI TEMPORAIREMENT INDISPONIBLE. Le Robot IA passe en mode secours CRM."
-        );
-      }
-
-      throw error;
     }
   }
+
+  const detail=lastError?.message||String(lastError||'Gemini indisponible');
+  const err=new Error(`GEMINI TEMPORAIREMENT INDISPONIBLE. Modèles testés: ${candidates.join(', ')}. ${detail.slice(0,400)}`);
+  err.geminiType='UNAVAILABLE';
+  throw err;
 }
 
 function genererRapportFallback(donnees, cause = "Gemini indisponible") {
@@ -1839,6 +1827,34 @@ function isAllowedProspectionSourceV22(item){
 function filterProspectionV22(rows){
   return rows.filter(x=>isAllowedProspectionSourceV22(x)&&isCoteIvoireCandidateV22(x));
 }
+function isEditorialProspectV221(item){
+  const title=normalizeSearchTextV21(item?.titre||'');
+  const text=normalizeSearchTextV21([item?.extrait,item?.description,item?.resume].filter(Boolean).join(' '));
+  const hay=title+' '+text;
+  const editorialTitlePatterns=[
+    /^(le|la|les|un|une) marche de l.?immobilier/,
+    /^(comment|pourquoi|qu.?est ce que|qu.?est-ce que|guide|actualite|actualites|magazine|article|blog|top)\b/,
+    /decouvrez les services go africa/,
+    /reseau s\b/,
+    /offres? d.?emploi/,
+    /meilleurs? et pires? investissements/,
+    /tout savoir sur/,
+    /qu.?est ce que la promotion immobiliere/
+  ];
+  if(editorialTitlePatterns.some(re=>re.test(title))) return true;
+  const editorialSignals=[
+    'magazine','article','blog','actualite','actualites','meilleurs et pires investissements',
+    'decouvrez les services','visibilite digitale','messagerie instantanee','campagnes emails et sms',
+    'a vendre','prise de rendez-vous en ligne'
+  ];
+  let signals=0;
+  for(const signal of editorialSignals) if(hay.includes(signal)) signals++;
+  // Ne retire un candidat que lorsque plusieurs signaux éditoriaux convergent.
+  return signals>=3 && !/appel d.?offres|avis de consultation|demande de cotation|prestataire|fournisseur|projet|programme immobilier|construction|promoteur|videosurveillance|controle d.?acces|alarme|incendie|ssi|cmsi|reseau|fibre|wifi|portail|domotique|maintenance/.test(hay);
+}
+function filterCommercialProspectionV221(rows){
+  return rows.filter(x=>!isEditorialProspectV221(x));
+}
 
 const PROSPECTION_V21_TIMEOUT_MS = 6500;
 const PROSPECTION_V21_MAX_HTML = 2 * 1024 * 1024;
@@ -1946,7 +1962,7 @@ async function mapWithConcurrencyV21(items,limit,worker){
   return out;
 }
 
-app.get('/robot/prospection-sources',(req,res)=>res.json({success:true,version:'2.2',country_scope:PROSPECTION_COUNTRY_V22,sources:getProspectionSourcesV21(),timeout_ms:PROSPECTION_V21_TIMEOUT_MS,concurrency:PROSPECTION_V21_CONCURRENCY}));
+app.get('/robot/prospection-sources',(req,res)=>res.json({success:true,version:'2.2.1',country_scope:PROSPECTION_COUNTRY_V22,sources:getProspectionSourcesV21(),timeout_ms:PROSPECTION_V21_TIMEOUT_MS,concurrency:PROSPECTION_V21_CONCURRENCY}));
 
 app.post('/robot/prospection-collecte',async(req,res)=>{
   const zone=PROSPECTION_COUNTRY_V22;
@@ -1975,7 +1991,7 @@ app.post('/robot/prospection-collecte',async(req,res)=>{
     const key=x.url_cible.replace(/\/$/,'');
     if(!unique.has(key)||x.pertinence>unique.get(key).pertinence) unique.set(key,x);
   }
-  const rows=filterProspectionV22([...unique.values()]).sort((a,b)=>b.pertinence-a.pertinence).slice(0,max);
+  const rows=filterCommercialProspectionV221(filterProspectionV22([...unique.values()])).sort((a,b)=>b.pertinence-a.pertinence).slice(0,max);
   let saved=0;
   if(dbReady&&pool){
     for(const c of rows){
@@ -1985,7 +2001,7 @@ app.post('/robot/prospection-collecte',async(req,res)=>{
       }catch(e){console.warn('⚠️ collecte V2.1.1',e.message);}
     }
   }
-  res.json({success:true,version:'2.2',country_scope:PROSPECTION_COUNTRY_V22,zone,type,service,sources_testees:selected.length,count:rows.length,saved,errors,candidats:rows.map(x=>({...x,statut:'COLLECTEE'})),performance:{timeout_ms:PROSPECTION_V21_TIMEOUT_MS,concurrency:PROSPECTION_V21_CONCURRENCY,parallel:true},message:`${rows.length} candidat(s) collecté(s) sans utiliser Gemini.`});
+  res.json({success:true,version:'2.2.1',country_scope:PROSPECTION_COUNTRY_V22,zone,type,service,sources_testees:selected.length,count:rows.length,saved,errors,candidats:rows.map(x=>({...x,statut:'COLLECTEE'})),performance:{timeout_ms:PROSPECTION_V21_TIMEOUT_MS,concurrency:PROSPECTION_V21_CONCURRENCY,parallel:true},message:`${rows.length} candidat(s) collecté(s) sans utiliser Gemini.`});
 });
 
 app.get('/robot/prospection-collectes',async(req,res)=>{
@@ -1994,7 +2010,7 @@ app.get('/robot/prospection-collectes',async(req,res)=>{
   const fetchLimit=Math.min(300,Math.max(limit,limit*3));
   const [rawRows]=await pool.query(`SELECT id,source_id,source_nom,url_source,titre,url_cible,extrait,pertinence,statut,created_at FROM prospection_web_collectes ORDER BY pertinence DESC,created_at DESC LIMIT ${fetchLimit}`);
   const rows=filterProspectionV22(rawRows).slice(0,limit);
-  res.json({success:true,version:'2.2',country_scope:PROSPECTION_COUNTRY_V22,candidats:rows});
+  res.json({success:true,version:'2.2.1',country_scope:PROSPECTION_COUNTRY_V22,candidats:rows});
 });
 
 app.delete('/robot/prospection-collectes/:id',async(req,res)=>{
@@ -2017,7 +2033,7 @@ app.post('/robot/prospection-nettoyer-sources-retirees',async(req,res)=>{
   );
   res.json({
     success:true,
-    version:'2.2',
+    version:'2.2.1',
     country_scope:PROSPECTION_COUNTRY_V22,
     collectes_supprimees:Number(collectes.affectedRows||0),
     opportunites_supprimees:Number(opportunites.affectedRows||0),
@@ -2028,11 +2044,11 @@ app.post('/robot/prospection-nettoyer-sources-retirees',async(req,res)=>{
 app.post('/robot/prospection-qualifier',async(req,res)=>{
   if(!gemini) return res.status(503).json({success:false,code:'GEMINI_NOT_CONFIGURED',message:'GEMINI_API_KEY non configurée.'});
   if(webSearchQuotaActive()) return res.status(429).json({success:false,code:'WEB_SEARCH_QUOTA_COOLDOWN',quota_blocked:true,quota_until:webSearchHealth.quotaUntil,message:webSearchQuotaMessage()});
-  const candidates=Array.isArray(req.body?.candidats)?filterProspectionV22(req.body.candidats).slice(0,10):[];
+  const candidates=Array.isArray(req.body?.candidats)?filterCommercialProspectionV221(filterProspectionV22(req.body.candidats)).slice(0,10):[];
   if(!candidates.length) return res.status(400).json({success:false,message:'Aucun candidat à qualifier.'});
   const prompt=`Tu es l’agent de qualification commerciale de VisionProtection & Informatique. Qualifie uniquement les candidats web fournis ci-dessous. Ne fabrique aucune information. Un candidat est une opportunité seulement si la source indique un projet, marché, consultation, besoin de prestataire, programme immobilier ou organisation pertinente. Réponds uniquement en JSON valide sous forme de tableau. Champs: index,qualifie,type_opportunite,titre,organisation,ville,service,description,date_limite,pertinence,resume.\n\nCANDIDATS:\n${JSON.stringify(candidates,null,2)}`;
   try{
-    const response=await gemini.models.generateContent({model:'gemini-3.8-flash',contents:prompt});
+    const response=await callGemini(prompt,{max503Retries:1});
     const parsed=extractJsonFromGemini(response.text||'');
     if(!parsed) throw new Error('Réponse Gemini non interprétable.');
     const qualified=Array.isArray(parsed)?parsed:[];
@@ -2048,10 +2064,12 @@ app.post('/robot/prospection-qualifier',async(req,res)=>{
       }
     }
     webSearchHealth={...webSearchHealth,available:true,lastCheck:new Date().toISOString(),lastError:null,reason:null,searches:webSearchHealth.searches+1,lastSearchAt:new Date().toISOString()};
-    res.json({success:true,version:'2.2',country_scope:PROSPECTION_COUNTRY_V22,qualified,saved,model:'gemini-3.8-flash'});
+    res.json({success:true,version:'2.2.1',country_scope:PROSPECTION_COUNTRY_V22,qualified,saved,model:response.model,ai_fallback:Boolean(response.fallback),commercial_filter:true});
   }catch(e){
     const msg=String(e.message||e); const isQuota=/429|quota|resource_exhausted|rate.?limit/i.test(msg);
+    const isUnavailable=e?.geminiType==='UNAVAILABLE'||/503|unavailable|high demand|overloaded|temporairement indisponible/i.test(msg);
     if(isQuota){const until=new Date(Date.now()+WEB_SEARCH_QUOTA_COOLDOWN_MS).toISOString();webSearchHealth={...webSearchHealth,available:false,quotaUntil:until,reason:'QUOTA',lastError:msg,lastCheck:new Date().toISOString()};return res.status(429).json({success:false,code:'WEB_SEARCH_QUOTA',quota_blocked:true,quota_until:until,message:'⚠️ Gemini est actuellement en quota. La collecte multi-sources reste disponible sans IA.'});}
+    if(isUnavailable) return res.status(503).json({success:false,code:'GEMINI_UNAVAILABLE',version:'2.2.1',retryable:true,message:'Gemini est temporairement indisponible après les tentatives et le modèle de secours. Les candidats collectés sont conservés.'});
     res.status(500).json({success:false,message:'Qualification Gemini impossible : '+msg.slice(0,600)});
   }
 });
