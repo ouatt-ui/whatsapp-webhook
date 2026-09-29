@@ -1,14 +1,10 @@
 {
   "name": "visionprotection-whatsapp-crm",
-  "version": "2.2.0",
-  "description": "VisionProspect V2.2 — VisionProtection WhatsApp CRM + IA + prospection Web multi-sources + devis",
+  "version": "2.1.1",
+  "description": "VisionProtection WhatsApp CRM V2.1.1 + prospection Web multi-sources optimisée + qualification Gemini",
   "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
-  "engines": {
-    "node": ">=18"
-  },
+  "scripts": {"start":"node index.js"},
+  "engines": {"node": ">=18"},
   "dependencies": {
     "axios": "^1.7.9",
     "express": "^4.21.2",
