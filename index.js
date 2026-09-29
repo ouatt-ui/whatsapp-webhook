@@ -1804,14 +1804,41 @@ try {
 
 // ================== PROSPECTION WEB MULTI-SOURCES V2.1.1 ==================
 const PROSPECTION_SOURCES_V21 = [
-  {id:'DGMP', nom:'DGMP — Marchés publics Côte d’Ivoire', type:'APPEL_OFFRES', url:'https://marchespublics.ci/accueil/home'},
-  {id:'DGMP_PPM_2026', nom:'DGMP — Plans de passation 2026', type:'APPEL_OFFRES', url:'https://marchespublics.ci/plan_passation/an/PPM/2026'},
-  {id:'CONSTRUCTION_CI', nom:'Ministère de la Construction, du Logement et du Cadre de Vie', type:'IMMOBILIER', url:'https://construction.gouv.ci/index.php/accueil'},
-  {id:'PJ_PROMOTEURS', nom:'Pages Jaunes Abidjan — Promoteurs immobiliers', type:'IMMOBILIER', url:'https://business.abidjan.net/pages-jaunes-1-services-aux-entreprises/620-promoteurs-immobiliers'},
   {id:'GOAFRICA_PROMOTEURS', nom:'Go Africa Online — Promoteurs immobiliers', type:'IMMOBILIER', url:'https://www.goafricaonline.com/ci/annuaire/promoteurs-immobiliers'},
   {id:'S3I', nom:'S3I — Promoteur immobilier et constructeur', type:'IMMOBILIER', url:'https://www.s3i.ci/'},
   {id:'UNGM', nom:'UNGM — United Nations Global Marketplace', type:'PUBLIC', url:'https://www.ungm.org/Public/Notice'}
 ];
+
+const PROSPECTION_COUNTRY_V22 = "Côte d’Ivoire";
+const PROSPECTION_ALLOWED_SOURCE_IDS_V22 = new Set(PROSPECTION_SOURCES_V21.map(x=>x.id));
+const PROSPECTION_RETIRED_SOURCE_IDS_V22 = new Set([
+  'DGMP','DGMP_PPM_2026','CONSTRUCTION_CI','PJ_PROMOTEURS'
+]);
+const PROSPECTION_CI_TERMS_V22 = [
+  "côte d'ivoire","cote d'ivoire","cote-divoire","ivory coast",
+  "abidjan","yamoussoukro","bouaké","bouake","korhogo","san-pédro","san pedro",
+  "daloa","man","gagnoa","abengourou","agboville","grand-bassam","grand bassam",
+  "bingerville","riviera","yopougon","marcory","treichville","port-bouët","port bouet",
+  "koumassi","abobo","adjamé","adjame","plateau","attécoubé","attecoube","anyama",
+  "songon","dabou","bassam","côte ivoire"
+];
+
+function isCoteIvoireCandidateV22(item){
+  const url=String(item?.url_cible||item?.url||item?.url_source||'');
+  const body=[
+    item?.titre,item?.extrait,item?.organisation,item?.ville,item?.description,
+    item?.resume,item?.source_nom,url
+  ].filter(Boolean).join(' ');
+  if(/\.ci(?:[/:?#]|$)/i.test(url)) return true;
+  const hay=normalizeSearchTextV21(body);
+  return PROSPECTION_CI_TERMS_V22.some(term=>hay.includes(normalizeSearchTextV21(term)));
+}
+function isAllowedProspectionSourceV22(item){
+  return PROSPECTION_ALLOWED_SOURCE_IDS_V22.has(String(item?.source_id||''));
+}
+function filterProspectionV22(rows){
+  return rows.filter(x=>isAllowedProspectionSourceV22(x)&&isCoteIvoireCandidateV22(x));
+}
 
 const PROSPECTION_V21_TIMEOUT_MS = 6500;
 const PROSPECTION_V21_MAX_HTML = 2 * 1024 * 1024;
@@ -1919,36 +1946,10 @@ async function mapWithConcurrencyV21(items,limit,worker){
   return out;
 }
 
-app.get('/robot/prospection-sources',(req,res)=>res.json({success:true,version:'2.1.1',sources:getProspectionSourcesV21(),timeout_ms:PROSPECTION_V21_TIMEOUT_MS,concurrency:PROSPECTION_V21_CONCURRENCY}));
-
-
-// ================== FILTRE GEOGRAPHIQUE COTE D'IVOIRE V2.2 ==================
-const CI_GEO_TERMS_V22 = [
-  "côte d'ivoire","cote d'ivoire","ivory coast","abidjan","yamoussoukro",
-  "bouaké","bouake","korhogo","san-pédro","san pedro","daloa","man",
-  "gagnoa","abengourou","agboville","grand-bassam","bingerville","cocody",
-  "riviera","yopougon","marcory","treichville","port-bouët","port bouet",
-  "koumassi","abobo","adjamé","adjame","plateau","attécoubé","attecoube",
-  "anyama","songon","dabou","bassam"
-];
-
-function isCoteIvoireCandidateV22(item){
-  const s = [
-    item?.titre, item?.url, item?.url_cible, item?.extrait,
-    item?.organisation, item?.ville, item?.description
-  ].filter(Boolean).join(" ").toLowerCase();
-
-  // Côte d'Ivoire domain and explicit CI references are accepted.
-  if (/\.ci(?:[\/:#?]|$)/i.test(String(item?.url_cible||item?.url||""))) return true;
-  return CI_GEO_TERMS_V22.some(term => s.includes(term));
-}
-
-function filterCoteIvoireV22(rows){
-  return rows.filter(isCoteIvoireCandidateV22);
-}
+app.get('/robot/prospection-sources',(req,res)=>res.json({success:true,version:'2.2',country_scope:PROSPECTION_COUNTRY_V22,sources:getProspectionSourcesV21(),timeout_ms:PROSPECTION_V21_TIMEOUT_MS,concurrency:PROSPECTION_V21_CONCURRENCY}));
 
 app.post('/robot/prospection-collecte',async(req,res)=>{
-  const zone='Côte d’Ivoire';
+  const zone=PROSPECTION_COUNTRY_V22;
   const type=String(req.body?.type||'Tous').trim();
   const service=String(req.body?.service||'Tous les services VisionProtection').trim();
   const max=Math.max(5,Math.min(30,Number(req.body?.max_results||15)));
@@ -1974,7 +1975,7 @@ app.post('/robot/prospection-collecte',async(req,res)=>{
     const key=x.url_cible.replace(/\/$/,'');
     if(!unique.has(key)||x.pertinence>unique.get(key).pertinence) unique.set(key,x);
   }
-  const rows=filterCoteIvoireV22([...unique.values()]).sort((a,b)=>b.pertinence-a.pertinence).slice(0,max);
+  const rows=filterProspectionV22([...unique.values()]).sort((a,b)=>b.pertinence-a.pertinence).slice(0,max);
   let saved=0;
   if(dbReady&&pool){
     for(const c of rows){
@@ -1984,20 +1985,50 @@ app.post('/robot/prospection-collecte',async(req,res)=>{
       }catch(e){console.warn('⚠️ collecte V2.1.1',e.message);}
     }
   }
-  res.json({success:true,version:'2.1.1',zone,type,service,sources_testees:selected.length,count:rows.length,saved,errors,candidats:rows.map(x=>({...x,statut:'COLLECTEE'})),performance:{timeout_ms:PROSPECTION_V21_TIMEOUT_MS,concurrency:PROSPECTION_V21_CONCURRENCY,parallel:true},message:`${rows.length} candidat(s) collecté(s) sans utiliser Gemini.`});
+  res.json({success:true,version:'2.2',country_scope:PROSPECTION_COUNTRY_V22,zone,type,service,sources_testees:selected.length,count:rows.length,saved,errors,candidats:rows.map(x=>({...x,statut:'COLLECTEE'})),performance:{timeout_ms:PROSPECTION_V21_TIMEOUT_MS,concurrency:PROSPECTION_V21_CONCURRENCY,parallel:true},message:`${rows.length} candidat(s) collecté(s) sans utiliser Gemini.`});
 });
 
 app.get('/robot/prospection-collectes',async(req,res)=>{
-  if(!dbReady||!pool) return res.json({success:true,candidats:[],database:'memory'});
+  if(!dbReady||!pool) return res.json({success:true,candidats:[],database:'memory',country_scope:PROSPECTION_COUNTRY_V22});
   const limit=Math.max(1,Math.min(100,Number(req.query.limit||50)));
-  const [rows]=await pool.query(`SELECT id,source_id,source_nom,url_source,titre,url_cible,extrait,pertinence,statut,created_at FROM prospection_web_collectes ORDER BY pertinence DESC,created_at DESC LIMIT ${limit}`);
-  res.json({success:true,candidats:rows});
+  const fetchLimit=Math.min(300,Math.max(limit,limit*3));
+  const [rawRows]=await pool.query(`SELECT id,source_id,source_nom,url_source,titre,url_cible,extrait,pertinence,statut,created_at FROM prospection_web_collectes ORDER BY pertinence DESC,created_at DESC LIMIT ${fetchLimit}`);
+  const rows=filterProspectionV22(rawRows).slice(0,limit);
+  res.json({success:true,version:'2.2',country_scope:PROSPECTION_COUNTRY_V22,candidats:rows});
+});
+
+app.delete('/robot/prospection-collectes/:id',async(req,res)=>{
+  if(!dbReady||!pool) return res.status(503).json({success:false,message:'Base de données indisponible.'});
+  const id=Number(req.params.id);
+  if(!Number.isInteger(id)||id<1) return res.status(400).json({success:false,message:'Identifiant invalide.'});
+  const [r]=await pool.query('DELETE FROM prospection_web_collectes WHERE id=?',[id]);
+  res.json({success:true,deleted:Number(r.affectedRows||0),id});
+});
+
+app.post('/robot/prospection-nettoyer-sources-retirees',async(req,res)=>{
+  if(!dbReady||!pool) return res.status(503).json({success:false,message:'Base de données indisponible.'});
+  const ids=[...PROSPECTION_RETIRED_SOURCE_IDS_V22];
+  const placeholders=ids.map(()=>'?').join(',');
+  const [collectes]=await pool.query(`DELETE FROM prospection_web_collectes WHERE source_id IN (${placeholders})`,ids);
+  const names=['DGMP','Ministère de la Construction','Pages Jaunes'];
+  const [opportunites]=await pool.query(
+    `DELETE FROM opportunites_web WHERE source_nom LIKE ? OR source_nom LIKE ? OR source_nom LIKE ?`,
+    ['%DGMP%','%Construction%','%Pages Jaunes%']
+  );
+  res.json({
+    success:true,
+    version:'2.2',
+    country_scope:PROSPECTION_COUNTRY_V22,
+    collectes_supprimees:Number(collectes.affectedRows||0),
+    opportunites_supprimees:Number(opportunites.affectedRows||0),
+    sources_retirees:ids
+  });
 });
 
 app.post('/robot/prospection-qualifier',async(req,res)=>{
   if(!gemini) return res.status(503).json({success:false,code:'GEMINI_NOT_CONFIGURED',message:'GEMINI_API_KEY non configurée.'});
   if(webSearchQuotaActive()) return res.status(429).json({success:false,code:'WEB_SEARCH_QUOTA_COOLDOWN',quota_blocked:true,quota_until:webSearchHealth.quotaUntil,message:webSearchQuotaMessage()});
-  const candidates=Array.isArray(req.body?.candidats)?req.body.candidats.slice(0,10):[];
+  const candidates=Array.isArray(req.body?.candidats)?filterProspectionV22(req.body.candidats).slice(0,10):[];
   if(!candidates.length) return res.status(400).json({success:false,message:'Aucun candidat à qualifier.'});
   const prompt=`Tu es l’agent de qualification commerciale de VisionProtection & Informatique. Qualifie uniquement les candidats web fournis ci-dessous. Ne fabrique aucune information. Un candidat est une opportunité seulement si la source indique un projet, marché, consultation, besoin de prestataire, programme immobilier ou organisation pertinente. Réponds uniquement en JSON valide sous forme de tableau. Champs: index,qualifie,type_opportunite,titre,organisation,ville,service,description,date_limite,pertinence,resume.\n\nCANDIDATS:\n${JSON.stringify(candidates,null,2)}`;
   try{
@@ -2017,7 +2048,7 @@ app.post('/robot/prospection-qualifier',async(req,res)=>{
       }
     }
     webSearchHealth={...webSearchHealth,available:true,lastCheck:new Date().toISOString(),lastError:null,reason:null,searches:webSearchHealth.searches+1,lastSearchAt:new Date().toISOString()};
-    res.json({success:true,version:'2.1.1',qualified,saved,model:'gemini-3.8-flash'});
+    res.json({success:true,version:'2.2',country_scope:PROSPECTION_COUNTRY_V22,qualified,saved,model:'gemini-3.8-flash'});
   }catch(e){
     const msg=String(e.message||e); const isQuota=/429|quota|resource_exhausted|rate.?limit/i.test(msg);
     if(isQuota){const until=new Date(Date.now()+WEB_SEARCH_QUOTA_COOLDOWN_MS).toISOString();webSearchHealth={...webSearchHealth,available:false,quotaUntil:until,reason:'QUOTA',lastError:msg,lastCheck:new Date().toISOString()};return res.status(429).json({success:false,code:'WEB_SEARCH_QUOTA',quota_blocked:true,quota_until:until,message:'⚠️ Gemini est actuellement en quota. La collecte multi-sources reste disponible sans IA.'});}
@@ -2025,7 +2056,16 @@ app.post('/robot/prospection-qualifier',async(req,res)=>{
   }
 });
 
-// ================== FIN PROSPECTION WEB MULTI-SOURCES V2.1 ==================
+app.delete('/crm/opportunites-web/:id',async(req,res)=>{
+  if(!dbReady||!pool) return res.status(503).json({success:false,message:'Base de données indisponible.'});
+  const id=Number(req.params.id);
+  if(!Number.isInteger(id)||id<1) return res.status(400).json({success:false,message:'Identifiant invalide.'});
+  const [r]=await pool.query('DELETE FROM opportunites_web WHERE id=?',[id]);
+  res.json({success:true,deleted:Number(r.affectedRows||0),id});
+});
+
+// ================== FIN PROSPECTION WEB MULTI-SOURCES V2.2 ==================
+
 
 // ================== PROSPECTION WEB IA V2.0 ==================
 function cleanOpportunityUrl(value){
@@ -2148,7 +2188,7 @@ app.post('/robot/opportunites-web', async (req,res)=>{
       });
     }
 
-    const zone='Côte d’Ivoire';
+    const zone=String(req.body?.zone||'Côte d’Ivoire, principalement Abidjan').trim();
     const type=String(req.body?.type||'Tous').trim();
     const service=String(req.body?.service||'Tous les services VisionProtection').trim();
     const periode=String(req.body?.periode||'30 derniers jours').trim();
