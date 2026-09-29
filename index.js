@@ -206,7 +206,6 @@ const gemini=process.env.GEMINI_API_KEY
   : null;
 const app=express(); app.use(express.json());
 const PORT=process.env.PORT||3000;
-const APP_VERSION="2.2.0";
 const VERIFY_TOKEN=process.env.META_VERIFY_TOKEN||"visionprotection2024";
 const WHATSAPP_TOKEN=process.env.WHATSAPP_ACCESS_TOKEN||"";
 const PHONE_NUMBER_ID=process.env.WHATSAPP_PHONE_NUMBER_ID||"";
@@ -640,20 +639,7 @@ app.get("/crm/stats",async(req,res)=>{try{if(dbReady){const[[t]]=await pool.quer
     COUNT(*) AS total,
     SUM(etat_conversation='TERMINE') AS done
   FROM prospects
-`);const[r]=await pool.query("SELECT COALESCE(service,'Non défini') service,COUNT(*) total FROM prospects GROUP BY service ORDER BY total DESC");const byService={};for(const x of r)byService[x.service]=Number(x.total);return res.json({success:true,totalProspects:Number(t.total||0),activeConversations:Number(t.total||0)-Number(t.done||0),completedConversations:Number(t.done||0),byService,database:"mysql"});}const p=[...sessions.values()];res.json({success:true,totalProspects:p.length,activeConversations:p.filter(x=>x.state!=="DONE").length,completedConversations:p.filter(x=>x.state==="DONE").length,database:"memory-fallback"});}catch(e){res.status(500).json({success:false,message:e.message});}});
-// ================== DIAGNOSTIC V2.2 ==================
-app.get("/health",(req,res)=>res.status(dbReady?200:503).json({
-  success:dbReady, application:"VisionProtection WhatsApp CRM", version:APP_VERSION,
-  database:dbReady?"mysql-connected":"memory-fallback",
-  gemini:geminiHealth.available===true?"available":geminiHealth.available===false?"unavailable":"unknown",
-  webSearch:webSearchHealth.available===true?"available":webSearchHealth.available===false?"unavailable":"unknown",
-  uptime_seconds:Math.floor(process.uptime()), timestamp:new Date().toISOString()
-}));
-
-app.get("/api/version",(req,res)=>res.json({success:true,version:APP_VERSION,release:"VisionProspect V2.2",database:dbReady?"mysql":"memory-fallback",graphApi:GRAPH_VERSION}));
-// ================== FIN DIAGNOSTIC V2.2 ==================
-
-app.get("/crm", (req, res) => {
+`);const[r]=await pool.query("SELECT COALESCE(service,'Non défini') service,COUNT(*) total FROM prospects GROUP BY service ORDER BY total DESC");const byService={};for(const x of r)byService[x.service]=Number(x.total);return res.json({success:true,totalProspects:Number(t.total||0),activeConversations:Number(t.total||0)-Number(t.done||0),completedConversations:Number(t.done||0),byService,database:"mysql"});}const p=[...sessions.values()];res.json({success:true,totalProspects:p.length,activeConversations:p.filter(x=>x.state!=="DONE").length,completedConversations:p.filter(x=>x.state==="DONE").length,database:"memory-fallback"});}catch(e){res.status(500).json({success:false,message:e.message});}});app.get("/crm", (req, res) => {
   res.sendFile(__dirname + "/public/crm.html");
 });
 
@@ -1818,14 +1804,23 @@ try {
 
 // ================== PROSPECTION WEB MULTI-SOURCES V2.1.1 ==================
 const PROSPECTION_SOURCES_V21 = [
-  {id:'DGMP', nom:'DGMP — Marchés publics Côte d’Ivoire', type:'APPEL_OFFRES', url:'https://marchespublics.ci/accueil/home'},
-  {id:'DGMP_PPM_2026', nom:'DGMP — Plans de passation 2026', type:'APPEL_OFFRES', url:'https://marchespublics.ci/plan_passation/an/PPM/2026'},
-  {id:'CONSTRUCTION_CI', nom:'Ministère de la Construction, du Logement et du Cadre de Vie', type:'IMMOBILIER', url:'https://construction.gouv.ci/index.php/accueil'},
-  {id:'PJ_PROMOTEURS', nom:'Pages Jaunes Abidjan — Promoteurs immobiliers', type:'IMMOBILIER', url:'https://business.abidjan.net/pages-jaunes-1-services-aux-entreprises/620-promoteurs-immobiliers'},
+  // Sources conservées pour le moteur V2.2.
+  // DGMP, DGMP PPM 2026, Ministère de la Construction et Pages Jaunes Promoteurs
+  // sont volontairement retirés des recherches actives.
   {id:'GOAFRICA_PROMOTEURS', nom:'Go Africa Online — Promoteurs immobiliers', type:'IMMOBILIER', url:'https://www.goafricaonline.com/ci/annuaire/promoteurs-immobiliers'},
   {id:'S3I', nom:'S3I — Promoteur immobilier et constructeur', type:'IMMOBILIER', url:'https://www.s3i.ci/'},
   {id:'UNGM', nom:'UNGM — United Nations Global Marketplace', type:'PUBLIC', url:'https://www.ungm.org/Public/Notice'}
 ];
+
+const PROSPECTION_SOURCES_RETIREES_V22 = [
+  {id:'DGMP', nom:'DGMP — Marchés publics Côte d’Ivoire', url:'https://marchespublics.ci/accueil/home'},
+  {id:'DGMP_PPM_2026', nom:'DGMP — Plans de passation 2026', url:'https://marchespublics.ci/plan_passation/an/PPM/2026'},
+  {id:'CONSTRUCTION_CI', nom:'Ministère de la Construction, du Logement et du Cadre de Vie', url:'https://construction.gouv.ci/index.php/accueil'},
+  {id:'PJ_PROMOTEURS', nom:'Pages Jaunes Abidjan — Promoteurs immobiliers', url:'https://business.abidjan.net/pages-jaunes-1-services-aux-entreprises/620-promoteurs-immobiliers'}
+];
+const PROSPECTION_SOURCES_RETIREES_IDS_V22 = PROSPECTION_SOURCES_RETIREES_V22.map(x=>x.id);
+const PROSPECTION_SOURCES_RETIREES_URLS_V22 = PROSPECTION_SOURCES_RETIREES_V22.map(x=>x.url);
+const PROSPECTION_SOURCES_RETIREES_NAMES_V22 = PROSPECTION_SOURCES_RETIREES_V22.map(x=>x.nom);
 
 const PROSPECTION_V21_TIMEOUT_MS = 6500;
 const PROSPECTION_V21_MAX_HTML = 2 * 1024 * 1024;
@@ -1980,6 +1975,29 @@ app.get('/robot/prospection-collectes',async(req,res)=>{
   const limit=Math.max(1,Math.min(100,Number(req.query.limit||50)));
   const [rows]=await pool.query(`SELECT id,source_id,source_nom,url_source,titre,url_cible,extrait,pertinence,statut,created_at FROM prospection_web_collectes ORDER BY pertinence DESC,created_at DESC LIMIT ${limit}`);
   res.json({success:true,candidats:rows});
+});
+
+app.delete('/robot/prospection-collectes/:id',async(req,res)=>{
+  try{
+    if(!dbReady||!pool) return res.status(503).json({success:false,message:'Base MySQL non disponible.'});
+    const id=Number(req.params.id);
+    if(!id) return res.status(400).json({success:false,message:'Identifiant de recherche invalide.'});
+    const [r]=await pool.query('DELETE FROM prospection_web_collectes WHERE id=?',[id]);
+    if(!r.affectedRows) return res.status(404).json({success:false,message:'Recherche introuvable.'});
+    res.json({success:true,message:'Recherche supprimée.'});
+  }catch(e){res.status(500).json({success:false,message:e.message});}
+});
+
+app.delete('/robot/prospection-nettoyage-sources-retirees',async(req,res)=>{
+  try{
+    if(!dbReady||!pool) return res.status(503).json({success:false,message:'Base MySQL non disponible.'});
+    const placeholders=PROSPECTION_SOURCES_RETIREES_IDS_V22.map(()=>'?').join(',');
+    const [c]=await pool.query(`DELETE FROM prospection_web_collectes WHERE source_id IN (${placeholders})`,PROSPECTION_SOURCES_RETIREES_IDS_V22);
+    const urlPlaceholders=PROSPECTION_SOURCES_RETIREES_URLS_V22.map(()=>'?').join(',');
+    const namePlaceholders=PROSPECTION_SOURCES_RETIREES_NAMES_V22.map(()=>'?').join(',');
+    const [o]=await pool.query(`DELETE FROM opportunites_web WHERE url_source IN (${urlPlaceholders}) OR source_nom IN (${namePlaceholders})`,[...PROSPECTION_SOURCES_RETIREES_URLS_V22,...PROSPECTION_SOURCES_RETIREES_NAMES_V22]);
+    res.json({success:true,collectes_supprimees:Number(c.affectedRows||0),opportunites_supprimees:Number(o.affectedRows||0),sources_retirees:PROSPECTION_SOURCES_RETIREES_V22.map(x=>x.nom)});
+  }catch(e){res.status(500).json({success:false,message:e.message});}
 });
 
 app.post('/robot/prospection-qualifier',async(req,res)=>{
@@ -2252,6 +2270,17 @@ app.patch('/crm/opportunites-web/:id',async(req,res)=>{
   }catch(e){res.status(500).json({success:false,message:e.message});}
 });
 
+app.delete('/crm/opportunites-web/:id',async(req,res)=>{
+  try{
+    if(!dbReady||!pool) return res.status(503).json({success:false,message:'Base MySQL non disponible.'});
+    const id=Number(req.params.id);
+    if(!id) return res.status(400).json({success:false,message:'Identifiant d’opportunité invalide.'});
+    const [r]=await pool.query('DELETE FROM opportunites_web WHERE id=?',[id]);
+    if(!r.affectedRows) return res.status(404).json({success:false,message:'Opportunité introuvable.'});
+    res.json({success:true,message:'Opportunité supprimée.'});
+  }catch(e){res.status(500).json({success:false,message:e.message});}
+});
+
 app.post('/crm/opportunites-web/:id/ajouter-crm',async(req,res)=>{
   const conn=await pool?.getConnection();
   try{
@@ -2298,7 +2327,7 @@ app.get('/robot/web-search-diagnostic', (req,res)=>{
   });
 });
 
-app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:APP_VERSION,database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
+app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.0.4",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
 
 
 // ================== DEVIS V1.8 ==================
@@ -2666,5 +2695,5 @@ app.post('/crm/devis/export/pdf', async (req,res)=>{
 
 // ================== FIN DEVIS V1.8 ==================
 
-async function start(){await initDatabase();app.listen(PORT,"0.0.0.0",()=>console.log(`VisionProtection WhatsApp CRM v2.2.0 - port ${PORT} - DB ${dbReady?"MYSQL":"MEMORY"}`));}
+async function start(){await initDatabase();app.listen(PORT,"0.0.0.0",()=>console.log(`VisionProtection WhatsApp CRM v2.5.4 V2.1.1 - port ${PORT} - DB ${dbReady?"MYSQL":"MEMORY"}`));}
 start().catch(e=>{console.error("❌ ERREUR DÉMARRAGE :",e.message);process.exit(1);});
