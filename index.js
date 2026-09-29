@@ -206,6 +206,7 @@ const gemini=process.env.GEMINI_API_KEY
   : null;
 const app=express(); app.use(express.json());
 const PORT=process.env.PORT||3000;
+const APP_VERSION="2.2.0";
 const VERIFY_TOKEN=process.env.META_VERIFY_TOKEN||"visionprotection2024";
 const WHATSAPP_TOKEN=process.env.WHATSAPP_ACCESS_TOKEN||"";
 const PHONE_NUMBER_ID=process.env.WHATSAPP_PHONE_NUMBER_ID||"";
@@ -639,7 +640,20 @@ app.get("/crm/stats",async(req,res)=>{try{if(dbReady){const[[t]]=await pool.quer
     COUNT(*) AS total,
     SUM(etat_conversation='TERMINE') AS done
   FROM prospects
-`);const[r]=await pool.query("SELECT COALESCE(service,'Non défini') service,COUNT(*) total FROM prospects GROUP BY service ORDER BY total DESC");const byService={};for(const x of r)byService[x.service]=Number(x.total);return res.json({success:true,totalProspects:Number(t.total||0),activeConversations:Number(t.total||0)-Number(t.done||0),completedConversations:Number(t.done||0),byService,database:"mysql"});}const p=[...sessions.values()];res.json({success:true,totalProspects:p.length,activeConversations:p.filter(x=>x.state!=="DONE").length,completedConversations:p.filter(x=>x.state==="DONE").length,database:"memory-fallback"});}catch(e){res.status(500).json({success:false,message:e.message});}});app.get("/crm", (req, res) => {
+`);const[r]=await pool.query("SELECT COALESCE(service,'Non défini') service,COUNT(*) total FROM prospects GROUP BY service ORDER BY total DESC");const byService={};for(const x of r)byService[x.service]=Number(x.total);return res.json({success:true,totalProspects:Number(t.total||0),activeConversations:Number(t.total||0)-Number(t.done||0),completedConversations:Number(t.done||0),byService,database:"mysql"});}const p=[...sessions.values()];res.json({success:true,totalProspects:p.length,activeConversations:p.filter(x=>x.state!=="DONE").length,completedConversations:p.filter(x=>x.state==="DONE").length,database:"memory-fallback"});}catch(e){res.status(500).json({success:false,message:e.message});}});
+// ================== DIAGNOSTIC V2.2 ==================
+app.get("/health",(req,res)=>res.status(dbReady?200:503).json({
+  success:dbReady, application:"VisionProtection WhatsApp CRM", version:APP_VERSION,
+  database:dbReady?"mysql-connected":"memory-fallback",
+  gemini:geminiHealth.available===true?"available":geminiHealth.available===false?"unavailable":"unknown",
+  webSearch:webSearchHealth.available===true?"available":webSearchHealth.available===false?"unavailable":"unknown",
+  uptime_seconds:Math.floor(process.uptime()), timestamp:new Date().toISOString()
+}));
+
+app.get("/api/version",(req,res)=>res.json({success:true,version:APP_VERSION,release:"VisionProspect V2.2",database:dbReady?"mysql":"memory-fallback",graphApi:GRAPH_VERSION}));
+// ================== FIN DIAGNOSTIC V2.2 ==================
+
+app.get("/crm", (req, res) => {
   res.sendFile(__dirname + "/public/crm.html");
 });
 
@@ -2284,7 +2298,7 @@ app.get('/robot/web-search-diagnostic', (req,res)=>{
   });
 });
 
-app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.0.4",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
+app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:APP_VERSION,database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
 
 
 // ================== DEVIS V1.8 ==================
@@ -2652,5 +2666,5 @@ app.post('/crm/devis/export/pdf', async (req,res)=>{
 
 // ================== FIN DEVIS V1.8 ==================
 
-async function start(){await initDatabase();app.listen(PORT,"0.0.0.0",()=>console.log(`VisionProtection WhatsApp CRM v2.5.4 V2.1.1 - port ${PORT} - DB ${dbReady?"MYSQL":"MEMORY"}`));}
+async function start(){await initDatabase();app.listen(PORT,"0.0.0.0",()=>console.log(`VisionProtection WhatsApp CRM v2.2.0 - port ${PORT} - DB ${dbReady?"MYSQL":"MEMORY"}`));}
 start().catch(e=>{console.error("❌ ERREUR DÉMARRAGE :",e.message);process.exit(1);});
