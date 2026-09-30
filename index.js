@@ -2055,11 +2055,28 @@ async function executeProspectionQualificationV222(jobId,candidates){
     const response=await callGemini(prompt,{max503Retries:1});
     const parsed=extractJsonFromGemini(response.text||'');
     if(!parsed) throw new Error('Réponse Gemini non interprétable.');
-    const qualified=Array.isArray(parsed)?parsed:[];
+
+    // Gemini peut parfois respecter le JSON mais encapsuler le tableau dans un objet
+    // (ex. {"qualifications":[...]}, {"qualified":[...]}, etc.).
+    // V2.2.2 transformait alors silencieusement l'objet en tableau vide.
+    const qualificationPayload = Array.isArray(parsed)
+      ? parsed
+      : (Array.isArray(parsed.qualifications) ? parsed.qualifications
+        : Array.isArray(parsed.qualified) ? parsed.qualified
+        : Array.isArray(parsed.opportunites) ? parsed.opportunites
+        : Array.isArray(parsed.results) ? parsed.results
+        : Array.isArray(parsed.candidats) ? parsed.candidats
+        : []);
+
+    console.log(`🧠 Qualification Gemini: réponse reçue, format=${Array.isArray(parsed)?'tableau':typeof parsed}, éléments=${qualificationPayload.length}.`);
+
+    const qualified=qualificationPayload;
     let saved=0;
     if(dbReady&&pool){
       for(const q of qualified){
-        if(!q?.qualifie) continue;
+        const isQualified = q?.qualifie === true || q?.qualifie === 1 ||
+          ['true','oui','yes','qualifie','qualifiée','qualifié','opportunite','opportunité'].includes(String(q?.qualifie||'').trim().toLowerCase());
+        if(!isQualified) continue;
         const idx=Number(q.index); const c=candidates[idx]; if(!c) continue;
         const typeOp=normalizeOpportunityType(q.type_opportunite||c.type_opportunite);
         const [r]=await pool.query(`INSERT INTO opportunites_web(type_opportunite,titre,organisation,ville,service,description,date_publication,date_limite,contact,email,telephone,url_source,source_nom,pertinence,statut,resume) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'NOUVELLE',?) ON DUPLICATE KEY UPDATE titre=VALUES(titre),organisation=VALUES(organisation),ville=VALUES(ville),service=VALUES(service),description=VALUES(description),date_limite=VALUES(date_limite),pertinence=VALUES(pertinence),resume=VALUES(resume),updated_at=CURRENT_TIMESTAMP`,[typeOp,String(q.titre||c.titre).slice(0,500),q.organisation||'',q.ville||'',q.service||'',q.description||c.extrait||'', '', q.date_limite||'', '', '', '', c.url_cible,c.source_nom,Math.max(0,Math.min(100,Number(q.pertinence||c.pertinence)||0)),q.resume||'']);
