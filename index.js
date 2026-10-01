@@ -2049,10 +2049,15 @@ async function executeProspectionQualificationV222(jobId,candidates){
   if(job) Object.assign(job,{status:'EN_COURS',started_at:new Date().toISOString()});
   try{
     if(!gemini) throw Object.assign(new Error('GEMINI_API_KEY non configurée.'),{geminiType:'NOT_CONFIGURED'});
-    if(webSearchQuotaActive()) throw Object.assign(new Error('Quota Gemini temporairement actif.'),{geminiType:'QUOTA'});
+    const prompt=`Tu es l’agent de qualification commerciale de VisionProtection & Informatique. Analyse uniquement les candidats web fournis ci-dessous. Ne fabrique aucune information.
 
-    const prompt=`Tu es l’agent de qualification commerciale de VisionProtection & Informatique. Qualifie uniquement les candidats web fournis ci-dessous. Ne fabrique aucune information. Un candidat est une opportunité seulement si la source indique un projet, marché, consultation, besoin de prestataire, programme immobilier ou organisation pertinente. Réponds uniquement en JSON valide sous forme de tableau. Champs: index,qualifie,type_opportunite,titre,organisation,ville,service,description,date_limite,pertinence,resume.\n\nCANDIDATS:\n${JSON.stringify(candidates,null,2)}`;
+OBJECTIF: identifier des prospects commerciaux réels en Côte d’Ivoire pour les services VisionProtection. Un candidat peut être qualifié même s’il ne publie pas actuellement un appel d’offres: une entreprise, industrie, boutique, supermarché, promoteur, résidence/villa ou organisation correspondant aux catégories ciblées et présentant des besoins plausibles en vidéosurveillance, contrôle d’accès, alarme, portail motorisé, visiophone, serrure intelligente, réseau informatique, clôture électrique, domotique ou CMSI-SSI peut être qualifié.
+
+QUALIFIE=false uniquement si la page est manifestement éditoriale, un annuaire sans entreprise identifiable, un doublon, hors Côte d’Ivoire, ou sans lien commercial exploitable avec les services VisionProtection. Ne fabrique jamais un projet, un budget, une échéance ou un besoin qui n’est pas présent.
+
+Réponds uniquement en JSON valide sous forme de tableau. Pour chaque candidat, retourne: index,qualifie,type_opportunite,titre,organisation,ville,service,description,date_limite,pertinence,resume. Le champ qualifie doit être true ou false. Si qualifie=true, explique dans resume les éléments réellement visibles dans le candidat qui justifient la qualification.\n\nCANDIDATS:\n${JSON.stringify(candidates,null,2)}`;
     const response=await callGemini(prompt,{max503Retries:1});
+    console.log(`🧠 Réponse Gemini brute: longueur=${String(response.text||'').length}, aperçu=${String(response.text||'').slice(0,500)}`);
     const parsed=extractJsonFromGemini(response.text||'');
     if(!parsed) throw new Error('Réponse Gemini non interprétable.');
 
@@ -2074,8 +2079,9 @@ async function executeProspectionQualificationV222(jobId,candidates){
     let saved=0;
     if(dbReady&&pool){
       for(const q of qualified){
-        const isQualified = q?.qualifie === true || q?.qualifie === 1 ||
-          ['true','oui','yes','qualifie','qualifiée','qualifié','opportunite','opportunité'].includes(String(q?.qualifie||'').trim().toLowerCase());
+        const qv=String(q?.qualifie ?? q?.qualified ?? q?.isQualified ?? '').trim().toLowerCase();
+        const isQualified = q?.qualifie === true || q?.qualifie === 1 || q?.qualified === true || q?.isQualified === true ||
+          ['true','1','oui','yes','y','qualifie','qualifiée','qualifié','opportunite','opportunité'].includes(qv);
         if(!isQualified) continue;
         const idx=Number(q.index); const c=candidates[idx]; if(!c) continue;
         const typeOp=normalizeOpportunityType(q.type_opportunite||c.type_opportunite);
@@ -2084,7 +2090,7 @@ async function executeProspectionQualificationV222(jobId,candidates){
         await pool.query(`UPDATE prospection_web_collectes SET statut='QUALIFIEE' WHERE id=?`,[c.id]).catch(()=>{});
       }
     }
-    const result={success:true,version:'2.2.2',country_scope:PROSPECTION_COUNTRY_V22,qualified,saved,model:response.model,ai_fallback:Boolean(response.fallback),commercial_filter:true};
+    const result={success:true,version:'2.2.4',country_scope:PROSPECTION_COUNTRY_V22,qualified,saved,model:response.model,ai_fallback:Boolean(response.fallback),commercial_filter:true};
     if(job) Object.assign(job,{status:'TERMINEE',finished_at:new Date().toISOString(),result,error:null});
     return result;
   }catch(e){
@@ -2116,13 +2122,13 @@ app.post('/robot/prospection-qualifier',async(req,res)=>{
 
   // Nettoyage mémoire : conserver les derniers jobs pendant 30 minutes.
   setTimeout(()=>prospectionAiJobsV222.delete(jobId),30*60*1000).unref?.();
-  return res.status(202).json({success:true,version:'2.2.2',async:true,job_id:jobId,status:'EN_ATTENTE',candidate_count:candidates.length,message:`Qualification IA démarrée pour ${candidates.length} candidat(s). La collecte reste disponible pendant le traitement.`});
+  return res.status(202).json({success:true,version:'2.2.4',async:true,job_id:jobId,status:'EN_ATTENTE',candidate_count:candidates.length,message:`Qualification IA démarrée pour ${candidates.length} candidat(s). La collecte reste disponible pendant le traitement.`});
 });
 
 app.get('/robot/prospection-qualifier/:jobId',async(req,res)=>{
   const job=prospectionAiJobsV222.get(String(req.params.jobId));
   if(!job) return res.status(404).json({success:false,code:'JOB_NOT_FOUND',message:'Job de qualification introuvable ou expiré.'});
-  return res.json({success:true,version:'2.2.2',job});
+  return res.json({success:true,version:'2.2.4',job});
 });
 
 app.delete('/crm/opportunites-web/:id',async(req,res)=>{
