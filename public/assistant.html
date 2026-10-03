@@ -262,7 +262,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
 
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px;">
     <label style="font-size:12px;color:#667085;">Zone
-      <input id="webZone" value="Côte d’Ivoire, principalement Abidjan" style="width:100%;padding:9px;border:1px solid #ccd4df;border-radius:7px;">
+      <input id="webZone" value="Côte d’Ivoire uniquement" style="width:100%;padding:9px;border:1px solid #ccd4df;border-radius:7px;">
     </label>
     <label style="font-size:12px;color:#667085;">Type
       <select id="webType" style="width:100%;padding:9px;border:1px solid #ccd4df;border-radius:7px;background:white;">
@@ -289,7 +289,6 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
     <button class="primary" style="width:auto;margin-top:0" onclick="rechercherOpportunitesWebV20()">🔎 Rechercher avec Gemini</button>
     <button class="secondary" style="width:auto;margin-top:0" onclick="verifierEtatGoogleSearchV201()">🧪 Vérifier Gemini</button>
     <button class="secondary" style="width:auto;margin-top:0" onclick="chargerOpportunitesWebV20()">↻ Charger les opportunités sauvegardées</button>
-    <button class="secondary" style="width:auto;margin-top:0;background:#fff1f0;color:#b42318" onclick="nettoyerSourcesRetireesV22()">🗑️ Nettoyer les sources retirées</button>
   </div>
 
   <div id="webProspectionInfo" style="margin-top:10px;font-size:13px;color:#667085;"></div>
@@ -307,7 +306,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
     <span id="v21Status" class="ia-status-pill">Prêt</span>
   </div>
   <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin-top:14px;">
-    <label style="font-size:12px;color:#667085;">Zone
+    <label style="font-size:12px;color:#667085;">Zone géographique verrouillée
       <input id="v21Zone" value="Côte d’Ivoire, principalement Abidjan" style="width:100%;padding:9px;border:1px solid #ccd4df;border-radius:7px;">
     </label>
     <label style="font-size:12px;color:#667085;">Type
@@ -329,7 +328,6 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
     <button class="secondary" style="width:auto;margin-top:0" onclick="qualifierProspectionV21()">🤖 Qualifier avec Gemini</button>
     <button class="secondary" style="width:auto;margin-top:0" onclick="chargerCollectesV21()">↻ Actualiser</button>
     <button class="secondary" style="width:auto;margin-top:0" onclick="afficherSourcesV21()">📚 Sources utilisées</button>
-    <button class="secondary" style="width:auto;margin-top:0;background:#fff1f0;color:#b42318" onclick="nettoyerSourcesRetireesV22()">🗑️ Nettoyer les sources retirées</button>
   </div>
   <div id="v21Info" style="margin-top:10px;font-size:13px;color:#667085;">La collecte fonctionne indépendamment du quota Gemini.</div>
   <div id="v21Sources" style="display:none;margin-top:10px;padding:10px;background:#f7f9fc;border-radius:8px;font-size:12px;"></div>
@@ -342,7 +340,10 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;bor
       <h2 style="margin:0">📄 Suivi des devis V1.9</h2>
       <div id="devisSuiviMetaV19" style="font-size:12px;color:#667085;margin-top:5px;">Chargement...</div>
     </div>
-    <button class="secondary" style="width:auto;margin-top:0" onclick="chargerSuiviDevisV19()">↻ Actualiser</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <button class="secondary" style="width:auto;margin-top:0" onclick="chargerSuiviDevisV19()">↻ Actualiser</button>
+      <button class="secondary" style="width:auto;margin-top:0" onclick="reinitialiserAffichageSuiviDevisV19()">↺ Remise à zéro</button>
+    </div>
   </div>
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px;">
     <div class="ia-kpi"><div class="ia-kpi-label">Devis actifs</div><div class="ia-kpi-value" id="v19DevisActifs">—</div></div>
@@ -1939,8 +1940,7 @@ function renderCollectesV21(rows){
     <div style="font-size:12px;color:#475467;margin-top:8px;line-height:1.5;">${escapeHtml(c.extrait||'Aucun extrait disponible.')}</div>
     <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:9px;">
       <a href="${escapeHtml(c.url_cible||c.url_source||'#')}" target="_blank" rel="noopener" style="padding:7px 10px;background:#edf2f8;border-radius:7px;text-decoration:none;color:#172033;">🌐 Ouvrir</a>
-      ${c.id?`<button type="button" onclick="qualifierUnCandidatV21(${Number(c.id)})" style="background:#0b3d91;color:white;padding:7px 10px;">🤖 Qualifier</button>
-      <button type="button" onclick="supprimerCollecteV21(${Number(c.id)})" style="background:#fff1f0;color:#b42318;padding:7px 10px;">🗑️ Supprimer</button>`:''}
+      ${c.id?`<button type="button" onclick="qualifierUnCandidatV21(${Number(c.id)})" style="background:#0b3d91;color:white;padding:7px 10px;">🤖 Qualifier</button>`:''}
     </div>
   </div>`).join('');
 }
@@ -1966,26 +1966,6 @@ async function collecterProspectionV21(){
 }
 async function chargerCollectesV21(){
   try{const d=await fetchJsonV202('/robot/prospection-collectes?limit=50');renderCollectesV21(d.candidats||[]);if(document.getElementById('v21Info')&&!candidatsProspectionV21.length)document.getElementById('v21Info').textContent='Aucun candidat sauvegardé pour le moment.';}catch(e){document.getElementById('v21Liste').innerHTML='<div style="color:#b42318;">❌ '+escapeHtml(e.message)+'</div>';}
-}
-async function supprimerCollecteV21(id){
-  if(!id)return;
-  if(!confirm('Supprimer cette page de recherche/candidat de la veille ?'))return;
-  try{
-    const d=await fetchJsonV202('/robot/prospection-collectes/'+encodeURIComponent(id),{method:'DELETE'});
-    if(!d.success)throw new Error(d.message||'Suppression impossible.');
-    await chargerCollectesV21();
-  }catch(e){alert('❌ '+e.message);}
-}
-
-async function nettoyerSourcesRetireesV22(){
-  const ok=confirm('Nettoyer les résultats provenant des 4 sources retirées ?\n\n• DGMP\n• DGMP PPM 2026\n• Ministère de la Construction\n• Pages Jaunes Promoteurs\n\nSeuls ces anciens résultats seront supprimés.');
-  if(!ok)return;
-  try{
-    const d=await fetchJsonV202('/robot/prospection-nettoyage-sources-retirees',{method:'DELETE'});
-    if(!d.success)throw new Error(d.message||'Nettoyage impossible.');
-    alert(`✅ Nettoyage terminé.\n\n${d.collectes_supprimees||0} page(s) de recherche supprimée(s).\n${d.opportunites_supprimees||0} opportunité(s) supprimée(s).`);
-    await Promise.all([chargerCollectesV21(),chargerOpportunitesWebV20()]);
-  }catch(e){alert('❌ '+e.message);}
 }
 async function qualifierUnCandidatV21(id){
   const c=candidatsProspectionV21.find(x=>String(x.id)===String(id));if(!c)return;
@@ -2045,7 +2025,6 @@ function renderOpportunitesWebV20(rows){
       <button type="button" onclick="ajouterOpportuniteAuCrmV20(${Number(o.id||0)},${i})" style="background:#0b3d91;color:white;padding:7px 10px;">➕ Ajouter au CRM</button>
       <button type="button" onclick="changerStatutOpportuniteV20(${Number(o.id||0)},'A_VERIFIER')" style="background:#fff4d6;color:#7a4b00;padding:7px 10px;">🔍 À vérifier</button>
       <button type="button" onclick="changerStatutOpportuniteV20(${Number(o.id||0)},'IGNOREE')" style="background:#edf2f8;color:#667085;padding:7px 10px;">Ignorer</button>
-      <button type="button" onclick="supprimerOpportuniteWebV20(${Number(o.id||0)})" style="background:#fff1f0;color:#b42318;padding:7px 10px;">🗑️ Supprimer</button>
     </div>
   </div>`).join('');
 }
@@ -2136,15 +2115,6 @@ async function changerStatutOpportuniteV20(id,statut){
   try{
     const data=await fetchJsonV202('/crm/opportunites-web/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({statut})});
     if(!data.success)throw new Error(data.message||'Mise à jour impossible.');
-    await chargerOpportunitesWebV20();
-  }catch(error){alert('❌ '+error.message);}
-}
-async function supprimerOpportuniteWebV20(id){
-  if(!id)return;
-  if(!confirm('Supprimer définitivement cette opportunité de la veille ?'))return;
-  try{
-    const data=await fetchJsonV202('/crm/opportunites-web/'+id,{method:'DELETE'});
-    if(!data.success)throw new Error(data.message||'Suppression impossible.');
     await chargerOpportunitesWebV20();
   }catch(error){alert('❌ '+error.message);}
 }
@@ -2472,6 +2442,21 @@ function preparerRelanceDevisV19(d){
       statut:d.statut_prospect||'Devis',updated_at:d.updated_at,_messageRelance:message
     });
   }
+}
+async function reinitialiserAffichageSuiviDevisV19(){
+  const meta=document.getElementById('devisSuiviMetaV19');
+  const list=document.getElementById('devisSuiviListeV19');
+  const ids=['v19DevisActifs','v19DevisAttente','v19CaPotentiel','v19CaAccepte'];
+  try{
+    const r=await fetch('/crm/devis-suivi/reset-affichage',{method:'POST'});
+    const d=await r.json();
+    if(!r.ok||!d.success) throw new Error(d.message||'Réinitialisation impossible.');
+  }catch(error){
+    console.warn('⚠️ RESET AFFICHAGE DEVIS :',error.message);
+  }
+  ids.forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='0';});
+  if(meta) meta.textContent='Affichage réinitialisé — les devis restent enregistrés.';
+  if(list) list.innerHTML='<div style="padding:12px;background:#f7f9fc;border-radius:8px;color:#667085;">Aucun suivi affiché. Cliquez sur « Actualiser » pour réafficher les devis enregistrés.</div>';
 }
 async function chargerSuiviDevisV19(){
   const meta=document.getElementById('devisSuiviMetaV19');
