@@ -2083,38 +2083,14 @@ Réponds uniquement en JSON valide sous forme de tableau. Pour chaque candidat, 
         const isQualified = q?.qualifie === true || q?.qualifie === 1 || q?.qualified === true || q?.isQualified === true ||
           ['true','1','oui','yes','y','qualifie','qualifiée','qualifié','opportunite','opportunité'].includes(qv);
         if(!isQualified) continue;
-        // Gemini peut renvoyer l'ID réel de la collecte (ex. 136)
-        // au lieu de la position zéro-based dans le tableau candidates.
-        // On tente successivement : position, ID DB, puis titre.
-        const idx=Number(q.index);
-        let c=Number.isInteger(idx) ? candidates[idx] : null;
-
-        if(!c && Number.isInteger(idx)){
-          c=candidates.find(x=>Number(x?.id)===idx) || null;
-        }
-
-        if(!c && q?.titre){
-          const titreGemini=String(q.titre).trim().toLowerCase();
-          c=candidates.find(x=>String(x?.titre||'').trim().toLowerCase()===titreGemini) || null;
-        }
-
-        if(!c){
-          console.warn(`⚠️ Candidat Gemini introuvable: index=${q?.index}, titre=${String(q?.titre||'').slice(0,160)}`);
-          continue;
-        }
-
+        const idx=Number(q.index); const c=candidates[idx]; if(!c) continue;
         const typeOp=normalizeOpportunityType(q.type_opportunite||c.type_opportunite);
         const [r]=await pool.query(`INSERT INTO opportunites_web(type_opportunite,titre,organisation,ville,service,description,date_publication,date_limite,contact,email,telephone,url_source,source_nom,pertinence,statut,resume) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'NOUVELLE',?) ON DUPLICATE KEY UPDATE titre=VALUES(titre),organisation=VALUES(organisation),ville=VALUES(ville),service=VALUES(service),description=VALUES(description),date_limite=VALUES(date_limite),pertinence=VALUES(pertinence),resume=VALUES(resume),updated_at=CURRENT_TIMESTAMP`,[typeOp,String(q.titre||c.titre).slice(0,500),q.organisation||'',q.ville||'',q.service||'',q.description||c.extrait||'', '', q.date_limite||'', '', '', '', c.url_cible,c.source_nom,Math.max(0,Math.min(100,Number(q.pertinence||c.pertinence)||0)),q.resume||'']);
         saved+=Number(r.affectedRows||0)>0?1:0;
         await pool.query(`UPDATE prospection_web_collectes SET statut='QUALIFIEE' WHERE id=?`,[c.id]).catch(()=>{});
       }
     }
-    const qualifiedCount=qualified.filter(q=>{
-      const qv=String(q?.qualifie ?? q?.qualified ?? q?.isQualified ?? '').trim().toLowerCase();
-      return q?.qualifie===true || q?.qualifie===1 || q?.qualified===true || q?.isQualified===true ||
-        ['true','1','oui','yes','y','qualifie','qualifiée','qualifié','opportunite','opportunité'].includes(qv);
-    }).length;
-    const result={success:true,version:'2.2.5',country_scope:PROSPECTION_COUNTRY_V22,qualified,qualified_count:qualifiedCount,saved,model:response.model,ai_fallback:Boolean(response.fallback),commercial_filter:true};
+    const result={success:true,version:'2.2.4',country_scope:PROSPECTION_COUNTRY_V22,qualified,saved,model:response.model,ai_fallback:Boolean(response.fallback),commercial_filter:true};
     if(job) Object.assign(job,{status:'TERMINEE',finished_at:new Date().toISOString(),result,error:null});
     return result;
   }catch(e){
@@ -2146,13 +2122,13 @@ app.post('/robot/prospection-qualifier',async(req,res)=>{
 
   // Nettoyage mémoire : conserver les derniers jobs pendant 30 minutes.
   setTimeout(()=>prospectionAiJobsV222.delete(jobId),30*60*1000).unref?.();
-  return res.status(202).json({success:true,version:'2.2.5',async:true,job_id:jobId,status:'EN_ATTENTE',candidate_count:candidates.length,message:`Qualification IA démarrée pour ${candidates.length} candidat(s). La collecte reste disponible pendant le traitement.`});
+  return res.status(202).json({success:true,version:'2.2.4',async:true,job_id:jobId,status:'EN_ATTENTE',candidate_count:candidates.length,message:`Qualification IA démarrée pour ${candidates.length} candidat(s). La collecte reste disponible pendant le traitement.`});
 });
 
 app.get('/robot/prospection-qualifier/:jobId',async(req,res)=>{
   const job=prospectionAiJobsV222.get(String(req.params.jobId));
   if(!job) return res.status(404).json({success:false,code:'JOB_NOT_FOUND',message:'Job de qualification introuvable ou expiré.'});
-  return res.json({success:true,version:'2.2.5',job});
+  return res.json({success:true,version:'2.2.4',job});
 });
 
 app.delete('/crm/opportunites-web/:id',async(req,res)=>{
@@ -2591,6 +2567,21 @@ app.patch('/crm/devis/:id', async (req,res)=>{
   }
 });
 
+// Remise à zéro de l'affichage du suivi des devis V1.9.
+// Non destructive : aucun devis MySQL n'est supprimé ou modifié.
+app.post('/crm/devis-suivi/reset-affichage', (req,res)=>{
+  res.json({
+    success:true,
+    reset:true,
+    message:'Affichage du suivi réinitialisé. Les devis restent enregistrés en base.',
+    statistiques:{
+      total:0, brouillons:0, envoyes:0, attente:0, acceptes:0, refuses:0,
+      en_retard:0, potentiel:0, ca_accepte:0, ca_refuse:0
+    },
+    devis:[]
+  });
+});
+
 // Liste globale des devis pour le tableau de suivi V1.9.
 app.get('/crm/devis-suivi', async (req,res)=>{
   try{
@@ -2652,6 +2643,30 @@ app.get('/crm/devis-suivi', async (req,res)=>{
     console.error('❌ DEVIS SUIVI :',error.message);
     res.status(500).json({success:false,message:error.message});
   }
+});
+
+// Remise à zéro de l'affichage du suivi des devis V1.9.
+// Cette route NE SUPPRIME PAS les devis en base. Elle fournit simplement
+// un état vide que l'interface peut afficher après clic sur « Remise à zéro ».
+app.get('/crm/devis-suivi/reset-affichage', (req,res)=>{
+  res.json({
+    success:true,
+    reset_affichage:true,
+    statistiques:{
+      total:0,
+      brouillons:0,
+      envoyes:0,
+      attente:0,
+      acceptes:0,
+      refuses:0,
+      en_retard:0,
+      potentiel:0,
+      ca_accepte:0,
+      ca_refuse:0
+    },
+    devis:[],
+    message:'Affichage du suivi réinitialisé. Les devis enregistrés en base ne sont pas supprimés.'
+  });
 });
 
 // Mise à jour du suivi d'un devis.
