@@ -209,8 +209,8 @@ main{padding:24px 28px;min-width:0}.workspace-panel{display:none!important}.work
 <h3>Assistant commercial</h3>
 <p style="font-size:14px;color:#667085">Analyse des prospects et données du CRM sans modifier le parcours WhatsApp.</p>
 <button class="primary" onclick="showWorkspace('dashboard');loadData()">↻ Actualiser les données</button>
-<button class="secondary" onclick="voirProspectsCRM()">👥 Voir les prospects</button>
-<button class="secondary" onclick="voirStatistiquesCRM()">▥ Voir les statistiques</button>
+<button class="secondary" onclick="showWorkspace('prospects');ask('Quels sont les prospects actuellement dans le CRM ?')">👥 Voir les prospects</button>
+<button class="secondary" type="button" onclick="ouvrirStatistiquesCRM()">▥ Voir les statistiques</button>
 <button class="secondary" onclick="showWorkspace('relances');detecterRelances()">▣ Préparer les relances</button>
 <button class="secondary" onclick="showWorkspace('relances');detecterRelances()">🔎 Détecter les prospects à relancer</button>
 <button class="secondary" onclick="showWorkspace('rapport');lancerRapportIA()">🤖 Générer le rapport IA</button>
@@ -2567,37 +2567,15 @@ chargerSuiviDevisV19();
 verifierBackendV202().then(()=>{chargerOpportunitesWebV20();chargerEtatWebSearchV204();chargerCollectesV21();});
 </script>
 <script>
-async function voirProspectsCRM(){
-  showWorkspace('prospects');
-  try {
-    if (!Array.isArray(prospects) || prospects.length === 0) {
-      await loadData();
-    } else {
-      renderProspects();
-    }
-    const panel=document.querySelector('[data-workspace="prospects"]');
-    if(panel) panel.scrollIntoView({behavior:'smooth',block:'start'});
-  } catch(e) {
-    console.error('Erreur affichage prospects:',e);
-  }
-}
-
-async function voirStatistiquesCRM(){
-  showWorkspace('dashboard');
-  try {
-    await loadData();
-    loadDashboardV14();
-    const panel=document.querySelector('[data-workspace="dashboard"]');
-    if(panel) panel.scrollIntoView({behavior:'smooth',block:'start'});
-  } catch(e) {
-    console.error('Erreur affichage statistiques:',e);
-  }
-}
-
 function showWorkspace(name){
   document.querySelectorAll('.workspace-panel').forEach(function(el){el.classList.toggle('active',el.dataset.workspace===name);});
   document.querySelectorAll('aside .workspace-nav').forEach(function(btn){btn.classList.toggle('active',btn.dataset.workspace===name);});
   window.scrollTo({top:0,behavior:'smooth'});
+}
+function ouvrirStatistiquesCRM(){
+  showWorkspace('dashboard');
+  if(typeof loadDashboardV14 === "function") loadDashboardV14();
+  else if(typeof loadData === "function") loadData();
 }
 document.addEventListener('DOMContentLoaded',function(){showWorkspace('dashboard');});
 </script>
