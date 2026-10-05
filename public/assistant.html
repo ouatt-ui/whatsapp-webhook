@@ -209,8 +209,8 @@ main{padding:24px 28px;min-width:0}.workspace-panel{display:none!important}.work
 <h3>Assistant commercial</h3>
 <p style="font-size:14px;color:#667085">Analyse des prospects et données du CRM sans modifier le parcours WhatsApp.</p>
 <button class="primary" onclick="showWorkspace('dashboard');loadData()">↻ Actualiser les données</button>
-<button class="secondary" onclick="showWorkspace('prospects');ask('Quels sont les prospects actuellement dans le CRM ?')">👥 Voir les prospects</button>
-<button class="secondary" type="button" onclick="ouvrirStatistiquesCRM()">▥ Voir les statistiques</button>
+<button class="secondary" onclick="showWorkspace('assistant');ask('Quels sont les prospects actuellement dans le CRM ?')">👥 Voir les prospects</button>
+<button class="secondary" onclick="showWorkspace('assistant');ask('Donne-moi les statistiques du CRM.')">▥ Voir les statistiques</button>
 <button class="secondary" onclick="showWorkspace('relances');detecterRelances()">▣ Préparer les relances</button>
 <button class="secondary" onclick="showWorkspace('relances');detecterRelances()">🔎 Détecter les prospects à relancer</button>
 <button class="secondary" onclick="showWorkspace('rapport');lancerRapportIA()">🤖 Générer le rapport IA</button>
@@ -2571,11 +2571,6 @@ function showWorkspace(name){
   document.querySelectorAll('.workspace-panel').forEach(function(el){el.classList.toggle('active',el.dataset.workspace===name);});
   document.querySelectorAll('aside .workspace-nav').forEach(function(btn){btn.classList.toggle('active',btn.dataset.workspace===name);});
   window.scrollTo({top:0,behavior:'smooth'});
-}
-function ouvrirStatistiquesCRM(){
-  showWorkspace('dashboard');
-  if(typeof loadDashboardV14 === "function") loadDashboardV14();
-  else if(typeof loadData === "function") loadData();
 }
 document.addEventListener('DOMContentLoaded',function(){showWorkspace('dashboard');});
 </script>
