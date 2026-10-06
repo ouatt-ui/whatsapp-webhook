@@ -1797,7 +1797,12 @@ try {
 const PROSPECTION_SOURCES_V21 = [
   {id:'GOAFRICA_PROMOTEURS', nom:'Go Africa Online — Promoteurs immobiliers', type:'IMMOBILIER', url:'https://www.goafricaonline.com/ci/annuaire/promoteurs-immobiliers'},
   {id:'S3I', nom:'S3I — Promoteur immobilier et constructeur', type:'IMMOBILIER', url:'https://www.s3i.ci/'},
-  {id:'UNGM', nom:'UNGM — United Nations Global Marketplace', type:'PUBLIC', url:'https://www.ungm.org/Public/Notice'}
+  {id:'UNGM', nom:'UNGM — United Nations Global Marketplace', type:'PUBLIC', url:'https://www.ungm.org/Public/Notice'},
+  {id:'GOAFRICA_MATERNELLES', nom:'Go Africa Online — Écoles maternelles / crèches', type:'EDUCATION', url:'https://www.goafricaonline.com/ci/annuaire/ecole-maternelle'},
+  {id:'GOAFRICA_PRIMAIRES', nom:'Go Africa Online — Écoles primaires', type:'EDUCATION', url:'https://www.goafricaonline.com/ci/annuaire/ecoles-primaires'},
+  {id:'GOAFRICA_SECONDAIRES', nom:'Go Africa Online — Écoles secondaires', type:'EDUCATION', url:'https://www.goafricaonline.com/ci/annuaire/ecoles-secondaires'},
+  {id:'GOAFRICA_SUPERIEUR', nom:'Go Africa Online — Enseignement supérieur / Universités', type:'EDUCATION', url:'https://www.goafricaonline.com/ci/annuaire/enseignement-superieur-universite'},
+  {id:'MENA_LOCALISATION_ECOLES', nom:'Ministère de l’Éducation — Localisation des établissements scolaires', type:'INSTITUTIONNEL', url:'https://rea.mendob.ci/sygdob/public/schoollocation'}
 ];
 
 const PROSPECTION_COUNTRY_V22 = "Côte d’Ivoire";
@@ -1857,6 +1862,39 @@ function isEditorialProspectV221(item){
 }
 function filterCommercialProspectionV221(rows){
   return rows.filter(x=>!isEditorialProspectV221(x));
+}
+const PROSPECTION_CATEGORY_TERMS_V22={
+  'Entreprises':['entreprise','societe','société','siege','siège','bureau','corporate'],
+  'Usines / industries':['usine','industrie','industriel','factory','production','manufacture','agroindustrie','agro-industrie'],
+  'Boutiques / magasins':['boutique','magasin','commerce','shop','store','retail'],
+  'Supermarchés':['supermarche','supermarché','hypermarché','market'],
+  'Résidences / villas':['residence','résidence','villa','logement','habitation','lotissement','promoteur immobilier','immobilier'],
+  'Établissements scolaires':['ecole','école','scolaire','établissement scolaire','college','collège','lycee','lycée','maternelle','primaire','universite','université','enseignement','institut','formation']
+};
+const PROSPECTION_SCHOOL_SUBTYPE_TERMS_V221={
+  'Crèches / garderies':['creche','crèche','garderie','petite enfance'],
+  'Écoles maternelles':['maternelle','préscolaire','prescolaire'],
+  'Écoles primaires':['primaire','école primaire','ecole primaire'],
+  'Collèges / lycées':['college','collège','lycee','lycée','secondaire'],
+  'Technique / professionnel':['technique','professionnel','professionnelle','formation professionnelle'],
+  'Universités / grandes écoles':['universite','université','enseignement supérieur','superieur','grande ecole','grande école','institut supérieur','institut superieur'],
+  'Centres de formation':['centre de formation','centres de formation','formation']
+};
+function matchesProspectionCategoryV22(item,category){
+  const c=String(category||'Tous').trim();
+  if(!c||c==='Tous') return true;
+  const terms=PROSPECTION_CATEGORY_TERMS_V22[c]||[];
+  if(!terms.length) return true;
+  const hay=normalizeSearchTextV21([item?.titre,item?.extrait,item?.source_nom,item?.type_opportunite].filter(Boolean).join(' '));
+  return terms.some(t=>hay.includes(normalizeSearchTextV21(t)));
+}
+function matchesProspectionSchoolSubtypeV221(item,subtype){
+  const st=String(subtype||'Tous').trim();
+  if(!st||st==='Tous') return true;
+  const terms=PROSPECTION_SCHOOL_SUBTYPE_TERMS_V221[st]||[];
+  if(!terms.length) return true;
+  const hay=normalizeSearchTextV21([item?.titre,item?.extrait,item?.source_nom,item?.type_opportunite].filter(Boolean).join(' '));
+  return terms.some(t=>hay.includes(normalizeSearchTextV21(t)));
 }
 
 const PROSPECTION_V21_TIMEOUT_MS = 6500;
@@ -1965,11 +2003,13 @@ async function mapWithConcurrencyV21(items,limit,worker){
   return out;
 }
 
-app.get('/robot/prospection-sources',(req,res)=>res.json({success:true,version:'2.2.2',country_scope:PROSPECTION_COUNTRY_V22,sources:getProspectionSourcesV21(),timeout_ms:PROSPECTION_V21_TIMEOUT_MS,concurrency:PROSPECTION_V21_CONCURRENCY}));
+app.get('/robot/prospection-sources',(req,res)=>res.json({success:true,version:'2.2.3',country_scope:PROSPECTION_COUNTRY_V22,sources:getProspectionSourcesV21(),timeout_ms:PROSPECTION_V21_TIMEOUT_MS,concurrency:PROSPECTION_V21_CONCURRENCY}));
 
 app.post('/robot/prospection-collecte',async(req,res)=>{
   const zone=PROSPECTION_COUNTRY_V22;
   const type=String(req.body?.type||'Tous').trim();
+  const category=String(req.body?.category||'Tous').trim();
+  const schoolSubtype=String(req.body?.schoolSubtype||'Tous').trim();
   const service=String(req.body?.service||'Tous les services VisionProtection').trim();
   const max=Math.max(5,Math.min(30,Number(req.body?.max_results||15)));
   const ids=Array.isArray(req.body?.sources)&&req.body.sources.length?req.body.sources.map(String):PROSPECTION_SOURCES_V21.map(x=>x.id);
@@ -1994,7 +2034,10 @@ app.post('/robot/prospection-collecte',async(req,res)=>{
     const key=x.url_cible.replace(/\/$/,'');
     if(!unique.has(key)||x.pertinence>unique.get(key).pertinence) unique.set(key,x);
   }
-  const rows=filterCommercialProspectionV221(filterProspectionV22([...unique.values()])).sort((a,b)=>b.pertinence-a.pertinence).slice(0,max);
+  const rows=filterCommercialProspectionV221(filterProspectionV22([...unique.values()]))
+    .filter(x=>matchesProspectionCategoryV22(x,category))
+    .filter(x=>category!=='Établissements scolaires'||matchesProspectionSchoolSubtypeV221(x,schoolSubtype))
+    .sort((a,b)=>b.pertinence-a.pertinence).slice(0,max);
   let saved=0;
   if(dbReady&&pool){
     for(const c of rows){
@@ -2004,7 +2047,7 @@ app.post('/robot/prospection-collecte',async(req,res)=>{
       }catch(e){console.warn('⚠️ collecte V2.1.1',e.message);}
     }
   }
-  res.json({success:true,version:'2.2.2',country_scope:PROSPECTION_COUNTRY_V22,zone,type,service,sources_testees:selected.length,count:rows.length,saved,errors,candidats:rows.map(x=>({...x,statut:'COLLECTEE'})),performance:{timeout_ms:PROSPECTION_V21_TIMEOUT_MS,concurrency:PROSPECTION_V21_CONCURRENCY,parallel:true},message:`${rows.length} candidat(s) collecté(s) sans utiliser Gemini.`});
+  res.json({success:true,version:'2.2.3',country_scope:PROSPECTION_COUNTRY_V22,zone,category,type,service,sources_testees:selected.length,count:rows.length,saved,errors,candidats:rows.map(x=>({...x,statut:'COLLECTEE'})),performance:{timeout_ms:PROSPECTION_V21_TIMEOUT_MS,concurrency:PROSPECTION_V21_CONCURRENCY,parallel:true},message:`${rows.length} candidat(s) collecté(s) sans utiliser Gemini.`});
 });
 
 app.get('/robot/prospection-collectes',async(req,res)=>{
@@ -2013,7 +2056,7 @@ app.get('/robot/prospection-collectes',async(req,res)=>{
   const fetchLimit=Math.min(300,Math.max(limit,limit*3));
   const [rawRows]=await pool.query(`SELECT id,source_id,source_nom,url_source,titre,url_cible,extrait,pertinence,statut,created_at FROM prospection_web_collectes ORDER BY pertinence DESC,created_at DESC LIMIT ${fetchLimit}`);
   const rows=filterProspectionV22(rawRows).slice(0,limit);
-  res.json({success:true,version:'2.2.2',country_scope:PROSPECTION_COUNTRY_V22,candidats:rows});
+  res.json({success:true,version:'2.2.3',country_scope:PROSPECTION_COUNTRY_V22,candidats:rows});
 });
 
 app.delete('/robot/prospection-collectes/:id',async(req,res)=>{
