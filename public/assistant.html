@@ -210,6 +210,9 @@ main{padding:24px 28px;min-width:0}.workspace-panel{display:none!important}.work
 <p style="font-size:14px;color:#667085">Analyse des prospects et données du CRM sans modifier le parcours WhatsApp.</p>
 <button class="primary" onclick="showWorkspace('dashboard');loadData()">↻ Actualiser les données</button>
 <button class="secondary" onclick="showWorkspace('assistant');ask('Quels sont les prospects actuellement dans le CRM ?')">👥 Voir les prospects</button>
+<button class="secondary" onclick="showWorkspace('prospects');loadData()">💾 Sauvegarde des prospects</button>
+<button class="secondary" onclick="showWorkspace('prospect-history');chargerHistoriqueV23()">🗂️ Historique des prospects</button>
+<button class="secondary" onclick="showWorkspace('prospects');supprimerSelectionV23()">🗑️ Suppression des prospects</button>
 <button class="secondary" onclick="showWorkspace('assistant');ask('Donne-moi les statistiques du CRM.')">▥ Voir les statistiques</button>
 <button class="secondary" onclick="showWorkspace('relances');detecterRelances()">▣ Préparer les relances</button>
 <button class="secondary" onclick="showWorkspace('relances');detecterRelances()">🔎 Détecter les prospects à relancer</button>
@@ -222,6 +225,7 @@ main{padding:24px 28px;min-width:0}.workspace-panel{display:none!important}.work
 <button class="workspace-nav" data-workspace="devis" onclick="showWorkspace('devis')">📄 Suivi des devis V1.9</button>
 <button class="workspace-nav" data-workspace="rapport" onclick="showWorkspace('rapport')">🤖 Rapport commercial IA V1.6</button>
 <button class="workspace-nav" data-workspace="prospects" onclick="showWorkspace('prospects')">🔎 Recherche des prospects</button>
+<button class="workspace-nav" data-workspace="prospect-history" onclick="showWorkspace('prospect-history');chargerHistoriqueV23()">🗂️ Historique / restauration</button>
 </aside>
 
 <main>
@@ -469,6 +473,15 @@ main{padding:24px 28px;min-width:0}.workspace-panel{display:none!important}.work
   <div id="prospects">
     Chargement...
   </div>
+</section></section>
+<section class="workspace-panel" data-workspace="prospect-history"><section class="panel">
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+<div><h2 style="margin:0">🗂️ Historique des prospects</h2><div style="color:#667085;margin-top:5px">Les suppressions et sauvegardes sont conservées. La restauration réactive le prospect.</div></div>
+<button class="primary" style="width:auto" onclick="chargerHistoriqueV23()">↻ Actualiser</button></div>
+<div style="display:grid;grid-template-columns:2fr 1fr;gap:10px;margin:16px 0">
+<input id="historySearchV23" placeholder="Rechercher dans l'historique..." oninput="filtrerHistoriqueV23()" style="padding:11px;border:1px solid #ccd4df;border-radius:8px">
+<button class="primary" style="width:auto" onclick="restaurerSelectionV23()">♻️ Restaurer la sélection</button></div>
+<div id="historyListV23"><p style="color:#667085">Chargement...</p></div>
 </section></section>
 </main>
 </div>
@@ -822,10 +835,10 @@ main{padding:24px 28px;min-width:0}.workspace-panel{display:none!important}.work
 </div>
 
 <script>
-let prospects=[],stats={},relancesDetectees=[];
+let prospects=[],stats={},relancesDetectees=[],historiqueV23=[];
 
-async function api(url){
- const r=await fetch(url,{cache:'no-store',headers:{'Accept':'application/json'}});
+async function api(url,options={}){
+ const r=await fetch(url,{cache:'no-store',headers:{'Accept':'application/json',...(options.headers||{})},...options});
  const text=await r.text();
  let data=null;
  try{data=text?JSON.parse(text):null;}catch(e){}
@@ -978,62 +991,21 @@ function filterProspects() {
 
 
 function afficherProspects(liste) {
-
-  const container = document.getElementById("prospects");
-
-  if (!liste.length) {
-    container.innerHTML =
-      "<p>Aucun prospect correspondant.</p>";
-    return;
-  }
-
-  let h =
-    "<table>" +
-    "<thead>" +
-    "<tr>" +
-    "<th>Nom</th>" +
-    "<th>Téléphone</th>" +
-    "<th>Service</th>" +
-    "<th>Ville</th>" +
-    "<th>Statut</th>" +
-    "</tr>" +
-    "</thead>" +
-    "<tbody>";
-
-  liste.slice(0, 20).forEach((p) => {
-
-  h +=
-    "<tr style='cursor:pointer' " +
-    "onclick='ouvrirProspect(" + p.id + ")'>" +
-      "<td>" +
-      escapeHtml(p.nom || "—") +
-      "</td>" +
-
-      "<td>" +
-      escapeHtml(p.telephone || p.whatsapp_id || "—") +
-      "</td>" +
-
-      "<td>" +
-      escapeHtml(p.service || "Non défini") +
-      "</td>" +
-
-      "<td>" +
-      escapeHtml(p.ville || "—") +
-      "</td>" +
-
-      "<td>" +
-      "<span class='status'>" +
-      escapeHtml(p.statut || "Nouveau") +
-      "</span>" +
-      "</td>" +
-
-      "</tr>";
-  });
-
-  h += "</tbody></table>";
-
-  container.innerHTML = h;
+ const container=document.getElementById("prospects");
+ if(!liste.length){container.innerHTML="<p>Aucun prospect correspondant.</p>";return;}
+ let h="<div style='display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap'><strong style='margin-right:auto'>"+liste.length+" prospect(s)</strong><button class='secondary' style='width:auto' onclick='selectionnerTousV23(true)'>☑️ Tout sélectionner</button><button class='secondary' style='width:auto' onclick='selectionnerTousV23(false)'>⬜ Désélectionner</button><button class='primary' style='width:auto' onclick='sauvegarderSelectionV23()'>💾 Sauvegarder</button><button class='secondary' style='width:auto' onclick='supprimerSelectionV23()'>🗑️ Supprimer</button><button class='secondary' style='width:auto' onclick='resetZoneV23()'>🧹 Réinitialiser</button></div>";
+ h+="<table><thead><tr><th></th><th>Nom</th><th>Téléphone</th><th>Entreprise</th><th>Service</th><th>Ville</th><th>Statut</th></tr></thead><tbody>";
+ liste.slice(0,100).forEach(p=>{h+="<tr style='cursor:pointer' onclick='ouvrirProspect("+Number(p.id)+")'><td onclick='event.stopPropagation()'><input type='checkbox' class='prospect-select-v23' value='"+Number(p.id)+"'></td><td>"+escapeHtml(p.nom||"—")+"</td><td>"+escapeHtml(p.telephone||p.whatsapp_id||"—")+"</td><td>"+escapeHtml(p.entreprise||"—")+"</td><td>"+escapeHtml(p.service||"Non défini")+"</td><td>"+escapeHtml(p.ville||"—")+"</td><td><span class='status'>"+escapeHtml(p.statut||"Nouveau")+"</span></td></tr>";});
+ h+="</tbody></table>";container.innerHTML=h;
 }
+function idsSelectionnesV23(){return [...document.querySelectorAll('.prospect-select-v23:checked')].map(x=>Number(x.value)).filter(Boolean);}
+function selectionnerTousV23(v){document.querySelectorAll('.prospect-select-v23').forEach(x=>x.checked=v);}
+async function sauvegarderSelectionV23(){const ids=idsSelectionnesV23();if(!ids.length)return alert('Sélectionnez au moins un prospect.');try{const d=await api('/crm/prospects-historique/sauvegarder',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})});alert('✅ '+d.message);await chargerHistoriqueV23();}catch(e){alert('❌ '+e.message);}}
+async function supprimerSelectionV23(){const ids=idsSelectionnesV23();if(!ids.length)return alert('Sélectionnez au moins un prospect.');if(!confirm('Déplacer les '+ids.length+' prospect(s) dans l’historique ?'))return;try{const d=await api('/crm/prospects-historique/supprimer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})});alert('✅ '+d.message);await loadData();}catch(e){alert('❌ '+e.message);}}
+async function resetZoneV23(){if(!confirm('Réinitialiser toute la zone ? Les prospects actifs seront archivés et restaurables.'))return;try{const d=await api('/crm/prospects-historique/vider-zone',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});alert('✅ '+d.message);await loadData();await chargerHistoriqueV23();}catch(e){alert('❌ '+e.message);}}
+async function chargerHistoriqueV23(){try{const d=await api('/crm/prospects-historique');historiqueV23=d.historique||[];filtrerHistoriqueV23();}catch(e){const el=document.getElementById('historyListV23');if(el)el.innerHTML='<p style="color:#b42318">Erreur : '+escapeHtml(e.message)+'</p>';}}
+function filtrerHistoriqueV23(){const el=document.getElementById('historyListV23');if(!el)return;const q=(document.getElementById('historySearchV23')?.value||'').toLowerCase().trim();const rows=historiqueV23.filter(x=>!q||[x.nom,x.telephone,x.entreprise,x.ville,x.service,x.action,x.archive_reason].some(v=>String(v||'').toLowerCase().includes(q)));if(!rows.length){el.innerHTML='<p>Aucun élément dans l’historique.</p>';return;}let h='<table><thead><tr><th></th><th>Nom</th><th>Entreprise</th><th>Téléphone</th><th>Service</th><th>Action</th><th>Date</th><th>État</th></tr></thead><tbody>';rows.forEach(x=>{h+='<tr><td><input type="checkbox" class="history-select-v23" value="'+Number(x.id)+'"></td><td>'+escapeHtml(x.nom||'—')+'</td><td>'+escapeHtml(x.entreprise||'—')+'</td><td>'+escapeHtml(x.telephone||'—')+'</td><td>'+escapeHtml(x.service||'—')+'</td><td>'+escapeHtml(x.action||'—')+'</td><td>'+escapeHtml(x.created_at||'—')+'</td><td>'+(x.restored_at?'♻️ Restauré':'📦 Archivé')+'</td></tr>';});h+='</tbody></table>';el.innerHTML=h;}
+async function restaurerSelectionV23(){const ids=[...document.querySelectorAll('.history-select-v23:checked')].map(x=>Number(x.value)).filter(Boolean);if(!ids.length)return alert('Sélectionnez au moins un élément.');if(!confirm('Restaurer les éléments sélectionnés ?'))return;try{const d=await api('/crm/prospects-historique/restaurer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})});alert('✅ '+d.message);await chargerHistoriqueV23();await loadData();showWorkspace('prospects');}catch(e){alert('❌ '+e.message);}}
 
 
 async function detecterRelances() {
