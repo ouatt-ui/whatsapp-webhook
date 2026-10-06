@@ -265,6 +265,27 @@ await pool.query(`
     statut = 'Nouveau'
   WHERE statut = 'Terminé'
 `);
+  // V2.3 — archivage non destructif et historique des prospects
+  async function ensureColumn(table,column,definition){
+    const [c]=await pool.query(`SELECT COUNT(*) AS total FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?`,[table,column]);
+    if(Number(c[0].total)===0){ await pool.query(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`); }
+  }
+  await ensureColumn('prospects','archive_status',"VARCHAR(20) DEFAULT 'ACTIF'");
+  await ensureColumn('prospects','archived_at','TIMESTAMP NULL');
+  await ensureColumn('prospects','archive_reason','VARCHAR(100) NULL');
+  await pool.query(`CREATE TABLE IF NOT EXISTS prospects_historique(
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    prospect_id INT NOT NULL,
+    action VARCHAR(30) NOT NULL,
+    snapshot JSON NOT NULL,
+    archive_reason VARCHAR(100) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    restored_at TIMESTAMP NULL,
+    INDEX idx_hist_prospect(prospect_id),
+    INDEX idx_hist_action(action)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+  await pool.query(`UPDATE prospects SET archive_status='ACTIF' WHERE archive_status IS NULL OR archive_status=''`);
+
   await pool.query(`CREATE TABLE IF NOT EXISTS messages(
    id BIGINT AUTO_INCREMENT PRIMARY KEY, prospect_id INT NULL, whatsapp_message_id VARCHAR(255) NULL,
    direction ENUM('entrant','sortant') NOT NULL, message TEXT NULL, message_type VARCHAR(50) DEFAULT 'text',
@@ -546,7 +567,91 @@ async function processMessage(from,name,text,waId=null,type="text"){
 async function sendText(to,body){if(!WHATSAPP_TOKEN||!PHONE_NUMBER_ID)throw new Error("WHATSAPP_ACCESS_TOKEN ou WHATSAPP_PHONE_NUMBER_ID manquant.");return (await axios.post(WHATSAPP_API_URL,{messaging_product:"whatsapp",recipient_type:"individual",to:normalizeForApi(to),type:"text",text:{preview_url:false,body}},{headers:{Authorization:`Bearer ${WHATSAPP_TOKEN}`,"Content-Type":"application/json"},timeout:30000})).data;}
 app.get("/webhook",(req,res)=>{if(req.query["hub.mode"]==="subscribe"&&req.query["hub.verify_token"]===VERIFY_TOKEN){console.log("✅ WEBHOOK META VÉRIFIÉ");return res.status(200).send(req.query["hub.challenge"]);}res.sendStatus(403);});
 app.post("/webhook",(req,res)=>{console.log("===== WEBHOOK WHATSAPP =====");console.log(JSON.stringify(req.body,null,2));res.sendStatus(200);try{for(const item of req.body?.entry||[])for(const change of item?.changes||[]){const v=change?.value;if(!v)continue;if(!v.messages?.length){if(v.statuses)console.log("STATUS WHATSAPP :",JSON.stringify(v.statuses,null,2));continue;}const contacts=v.contacts||[];for(const m of v.messages){const from=m.from,c=contacts.find(x=>x.wa_id===from)||contacts[0]||{},name=c?.profile?.name||"";let t="",type=m.type||"unknown";if(type==="text")t=m.text?.body||"";else if(type==="interactive"){const i=m.interactive||{};t=i.type==="button_reply"?(i.button_reply?.id||i.button_reply?.title||""):(i.list_reply?.id||i.list_reply?.title||"");}else if(type==="button")t=m.button?.text||m.button?.payload||"";if(!t)continue;processMessage(from,name,t,m.id||null,type).then(r=>sendText(from,r)).then(x=>console.log("✅ REPONSE WHATSAPP ENVOYÉE :",JSON.stringify(x))).catch(e=>console.error("❌ ERREUR TRAITEMENT / ENVOI :",e.response?.data||e.message));}}}catch(e){console.error("❌ ERREUR WEBHOOK :",e);}});
-app.get("/crm/prospects",async(req,res)=>{try{if(dbReady){const[r]=await pool.query("SELECT * FROM prospects ORDER BY updated_at DESC");return res.json({success:true,count:r.length,prospects:r,database:"mysql"});}return res.json({success:true,count:sessions.size,prospects:[...sessions.values()],database:"memory-fallback"});}catch(e){res.status(500).json({success:false,message:e.message});}});
+app.get("/crm/prospects",async(req,res)=>{try{if(dbReady){const[r]=await pool.query("SELECT * FROM prospects WHERE COALESCE(archive_status,'ACTIF')='ACTIF' ORDER BY updated_at DESC");return res.json({success:true,count:r.length,prospects:r,database:"mysql"});}return res.json({success:true,count:sessions.size,prospects:[...sessions.values()],database:"memory-fallback"});}catch(e){res.status(500).json({success:false,message:e.message});}});
+
+// V2.3 — Historique / sauvegarde / suppression réversible des prospects
+app.get('/crm/prospects-historique',async(req,res)=>{
+  try{
+    if(!dbReady) return res.json({success:true,count:0,historique:[],database:'memory-fallback'});
+    const [rows]=await pool.query(`SELECT h.id,h.prospect_id,h.action,h.archive_reason,h.created_at,h.restored_at,
+      JSON_UNQUOTE(JSON_EXTRACT(h.snapshot,'$.nom')) nom,
+      JSON_UNQUOTE(JSON_EXTRACT(h.snapshot,'$.telephone')) telephone,
+      JSON_UNQUOTE(JSON_EXTRACT(h.snapshot,'$.entreprise')) entreprise,
+      JSON_UNQUOTE(JSON_EXTRACT(h.snapshot,'$.ville')) ville,
+      JSON_UNQUOTE(JSON_EXTRACT(h.snapshot,'$.service')) service,
+      JSON_UNQUOTE(JSON_EXTRACT(h.snapshot,'$.statut')) statut
+      FROM prospects_historique h ORDER BY h.created_at DESC`);
+    res.json({success:true,count:rows.length,historique:rows,database:'mysql'});
+  }catch(e){res.status(500).json({success:false,message:e.message});}
+});
+
+app.post('/crm/prospects-historique/sauvegarder',async(req,res)=>{
+  let conn;
+  try{
+    if(!dbReady) return res.status(503).json({success:false,message:'Base MySQL non disponible.'});
+    const ids=(Array.isArray(req.body?.ids)?req.body.ids:[]).map(Number).filter(Boolean);
+    if(!ids.length) return res.status(400).json({success:false,message:'Aucun prospect sélectionné.'});
+    conn=await pool.getConnection(); await conn.beginTransaction();
+    let count=0;
+    for(const id of ids){
+      const [rows]=await conn.query("SELECT * FROM prospects WHERE id=? LIMIT 1",[id]);
+      if(!rows.length) continue;
+      await conn.query("INSERT INTO prospects_historique(prospect_id,action,snapshot,archive_reason) VALUES(?,?,?,?)",[id,'SAUVEGARDE',JSON.stringify(rows[0]),'SAUVEGARDE_MANUELLE']); count++;
+    }
+    await conn.commit(); res.json({success:true,count,message:`${count} prospect(s) sauvegardé(s) dans l'historique.`});
+  }catch(e){if(conn)await conn.rollback();res.status(500).json({success:false,message:e.message});}finally{if(conn)conn.release();}
+});
+
+app.post('/crm/prospects-historique/supprimer',async(req,res)=>{
+  let conn;
+  try{
+    if(!dbReady) return res.status(503).json({success:false,message:'Base MySQL non disponible.'});
+    const ids=(Array.isArray(req.body?.ids)?req.body.ids:[]).map(Number).filter(Boolean);
+    if(!ids.length) return res.status(400).json({success:false,message:'Aucun prospect sélectionné.'});
+    conn=await pool.getConnection(); await conn.beginTransaction(); let count=0;
+    for(const id of ids){
+      const [rows]=await conn.query("SELECT * FROM prospects WHERE id=? AND COALESCE(archive_status,'ACTIF')='ACTIF' LIMIT 1",[id]); if(!rows.length) continue;
+      await conn.query("INSERT INTO prospects_historique(prospect_id,action,snapshot,archive_reason) VALUES(?,?,?,?)",[id,'SUPPRESSION',JSON.stringify(rows[0]),'SUPPRESSION_MANUELLE']);
+      await conn.query("UPDATE prospects SET archive_status='ARCHIVE',archived_at=CURRENT_TIMESTAMP,archive_reason='SUPPRESSION_MANUELLE' WHERE id=?",[id]); count++;
+    }
+    await conn.commit(); res.json({success:true,count,message:`${count} prospect(s) déplacé(s) dans l'historique.`});
+  }catch(e){if(conn)await conn.rollback();res.status(500).json({success:false,message:e.message});}finally{if(conn)conn.release();}
+});
+
+app.post('/crm/prospects-historique/vider-zone',async(req,res)=>{
+  let conn;
+  try{
+    if(!dbReady) return res.status(503).json({success:false,message:'Base MySQL non disponible.'});
+    conn=await pool.getConnection(); await conn.beginTransaction();
+    const [rows]=await conn.query("SELECT * FROM prospects WHERE COALESCE(archive_status,'ACTIF')='ACTIF'");
+    for(const p of rows){
+      await conn.query("INSERT INTO prospects_historique(prospect_id,action,snapshot,archive_reason) VALUES(?,?,?,?)",[p.id,'SUPPRESSION',JSON.stringify(p),'RESET_ZONE_WEB']);
+      await conn.query("UPDATE prospects SET archive_status='ARCHIVE',archived_at=CURRENT_TIMESTAMP,archive_reason='RESET_ZONE_WEB' WHERE id=?",[p.id]);
+    }
+    await conn.commit(); res.json({success:true,count:rows.length,message:`Zone de travail réinitialisée : ${rows.length} prospect(s) archivé(s).`});
+  }catch(e){if(conn)await conn.rollback();res.status(500).json({success:false,message:e.message});}finally{if(conn)conn.release();}
+});
+
+app.post('/crm/prospects-historique/restaurer',async(req,res)=>{
+  let conn;
+  try{
+    if(!dbReady) return res.status(503).json({success:false,message:'Base MySQL non disponible.'});
+    const ids=(Array.isArray(req.body?.ids)?req.body.ids:[]).map(Number).filter(Boolean); if(!ids.length)return res.status(400).json({success:false,message:"Aucun élément d'historique sélectionné."});
+    conn=await pool.getConnection(); await conn.beginTransaction(); let count=0;
+    for(const hid of ids){
+      const [hr]=await conn.query("SELECT * FROM prospects_historique WHERE id=? LIMIT 1",[hid]); if(!hr.length)continue;
+      let snap={}; try{snap=typeof hr[0].snapshot==='string'?JSON.parse(hr[0].snapshot):hr[0].snapshot||{};}catch(e){}
+      const [pr]=await conn.query("SELECT id FROM prospects WHERE id=? LIMIT 1",[hr[0].prospect_id]);
+      if(pr.length){
+        await conn.query(`UPDATE prospects SET whatsapp_id=COALESCE(NULLIF(? ,''),whatsapp_id),nom=?,telephone=?,entreprise=?,ville=?,service=?,besoin=?,statut=?,etat_conversation=?,archive_status='ACTIF',archived_at=NULL,archive_reason=NULL WHERE id=?`,[snap.whatsapp_id||'',snap.nom||null,snap.telephone||null,snap.entreprise||null,snap.ville||null,snap.service||null,snap.besoin||null,snap.statut||'Nouveau',snap.etat_conversation||'ACTIF',hr[0].prospect_id]);
+      } else {
+        await conn.query(`INSERT INTO prospects(id,whatsapp_id,nom,telephone,entreprise,ville,service,besoin,statut,etat_conversation,archive_status) VALUES(?,?,?,?,?,?,?,?,?,?, 'ACTIF')`,[hr[0].prospect_id,snap.whatsapp_id||('RESTORE-'+hr[0].prospect_id),snap.nom||null,snap.telephone||null,snap.entreprise||null,snap.ville||null,snap.service||null,snap.besoin||null,snap.statut||'Nouveau',snap.etat_conversation||'ACTIF']);
+      }
+      await conn.query("UPDATE prospects_historique SET restored_at=CURRENT_TIMESTAMP WHERE id=?",[hid]); count++;
+    }
+    await conn.commit(); res.json({success:true,count,message:`${count} élément(s) restauré(s).`});
+  }catch(e){if(conn)await conn.rollback();res.status(500).json({success:false,message:e.message});}finally{if(conn)conn.release();}
+});
 app.get("/crm/prospect/:phone",async(req,res)=>{try{const p=dbReady?await loadProspect(req.params.phone):sessions.get(req.params.phone);if(!p)return res.status(404).json({success:false,message:"Prospect introuvable"});res.json({success:true,prospect:p,database:dbReady?"mysql":"memory-fallback"});}catch(e){res.status(500).json({success:false,message:e.message});}});app.put("/crm/prospect/:phone",async(req,res)=>{
   try{
     if(!dbReady){
