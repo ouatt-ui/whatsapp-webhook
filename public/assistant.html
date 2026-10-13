@@ -662,7 +662,7 @@ main{padding:24px 28px;min-width:0}.workspace-panel{display:none!important}.work
       <div id="statutActionV17" style="margin-top:10px;color:#667085;font-size:12px;">L'IA analyse l'historique, le statut, le besoin et les notes. Aucune action ou aucun envoi n'est automatique.</div>
       <div id="recommandationActionV17" style="display:none;margin-top:12px;padding:12px;background:white;border:1px solid #d7e8dc;border-radius:8px;white-space:pre-wrap;font-size:13px;line-height:1.5;"></div>
       <div id="actionsV17" style="display:none;gap:8px;flex-wrap:wrap;margin-top:10px;">
-        <button type="button" onclick="utiliserMessageV17()" style="background:#198754;color:white;">💬 Utiliser le message conseillé</button>
+        <button type="button" onclick="ouvrirWhatsAppMessageV17()" style="background:#198754;color:white;">💬 Ouvrir WhatsApp avec le message conseillé</button>
         <button type="button" onclick="preparerNoteV17()" style="background:#0b3d91;color:white;">📝 Préparer la note commerciale</button>
       </div>
     </div>
@@ -1208,6 +1208,35 @@ async function recommanderActionIA() {
     if(zone) zone.textContent=data.fallback?'🟠 Recommandation générée en mode secours CRM.':'🟢 Recommandation Gemini — '+(data.model||'gemini');
   }catch(error){console.error('Erreur recommandation V1.7 :',error);if(zone)zone.textContent='❌ '+error.message;alert('❌ Recommandation impossible : '+error.message);}
   finally{if(bouton)bouton.disabled=false;}
+}
+
+function ouvrirWhatsAppMessageV17(){
+  if (!prospectSelectionne) {
+    alert("Aucun prospect sélectionné.");
+    return;
+  }
+
+  const r = prospectSelectionne._recommandationV17;
+  const message = r && typeof r === "object" ? String(r.message || "").trim() : "";
+  if (!message) {
+    alert("Aucun message WhatsApp conseillé disponible. Lancez d’abord la recommandation commerciale.");
+    return;
+  }
+
+  const numero = prospectSelectionne.telephone || prospectSelectionne.whatsapp_id;
+  if (!numero) {
+    alert("Numéro WhatsApp introuvable pour ce prospect.");
+    return;
+  }
+
+  let propre = String(numero).replace(/\D/g, "");
+  // Numéros ivoiriens locaux : convertir 07/05/01... ou 0X... en format international 225.
+  if (propre.startsWith("00")) propre = propre.substring(2);
+  if (propre.startsWith("0")) propre = "225" + propre.substring(1);
+  if (!propre.startsWith("225") && propre.length <= 10) propre = "225" + propre;
+
+  const url = "https://wa.me/" + propre + "?text=" + encodeURIComponent(message);
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 function utiliserMessageV17(){
