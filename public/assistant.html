@@ -1169,10 +1169,24 @@ async function recommanderActionIA() {
     const response=await fetch('/robot/recommander-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:numero})});
     const data=await response.json();
     if(!response.ok||!data.success) throw new Error(data.message||'Recommandation impossible.');
-    prospectSelectionne._recommandationV17=data.recommandation;
+    // Normaliser la réponse IA afin que la note soit disponible quel que soit
+    // le format de réponse renvoyé par le backend.
+    const recommandationBrute = data.recommandation ?? data.recommendation ?? data.result ?? {};
+    let recommandationNormalisee = recommandationBrute;
+    if (typeof recommandationBrute === 'string') {
+      try { recommandationNormalisee = JSON.parse(recommandationBrute); }
+      catch (_) { recommandationNormalisee = { texte: recommandationBrute }; }
+    }
+    if (!recommandationNormalisee || typeof recommandationNormalisee !== 'object') {
+      recommandationNormalisee = {};
+    }
+    if (!recommandationNormalisee.note && (data.note || data.noteCommerciale || data.note_commerciale)) {
+      recommandationNormalisee.note = data.note || data.noteCommerciale || data.note_commerciale;
+    }
+    prospectSelectionne._recommandationV17=recommandationNormalisee;
     if(out){
       out.style.display='block';
-      const r = data.recommandation;
+      const r = recommandationNormalisee;
       if (r && typeof r === 'object') {
         const esc = (v) => escapeHtml(String(v || '').trim());
         out.innerHTML =
@@ -1186,6 +1200,11 @@ async function recommanderActionIA() {
       }
     }
     if(actions) actions.style.display='flex';
+    // Dès que l'IA a fourni une note, la placer dans le champ modifiable.
+    // L'enregistrement en base reste volontaire via « Ajouter la note ».
+    if (String(recommandationNormalisee.note || '').trim()) {
+      copierNoteV17DansChamp(true);
+    }
     if(zone) zone.textContent=data.fallback?'🟠 Recommandation générée en mode secours CRM.':'🟢 Recommandation Gemini — '+(data.model||'gemini');
   }catch(error){console.error('Erreur recommandation V1.7 :',error);if(zone)zone.textContent='❌ '+error.message;alert('❌ Recommandation impossible : '+error.message);}
   finally{if(bouton)bouton.disabled=false;}
@@ -1201,14 +1220,25 @@ function utiliserMessageV17(){
   box.scrollIntoView({behavior:'smooth',block:'center'});
 }
 
-function preparerNoteV17(){
+function copierNoteV17DansChamp(silencieux=false){
   const r=prospectSelectionne?._recommandationV17;
-  const note = r && typeof r === 'object' ? String(r.note || '').trim() : '';
+  let note='';
+  if(r && typeof r === 'object') {
+    note=String(r.note || r.noteCommerciale || r.note_commerciale || '').trim();
+  }
   const box=document.getElementById('nouvelleNote');
-  if(!box||!note){alert('La note proposée n’a pas pu être extraite.');return;}
+  if(!box || !note){
+    if(!silencieux) alert('La note proposée n’a pas pu être extraite. Vérifiez que la recommandation IA contient une note commerciale.');
+    return false;
+  }
   box.value=note;
   box.focus();
   box.scrollIntoView({behavior:'smooth',block:'center'});
+  return true;
+}
+
+function preparerNoteV17(){
+  copierNoteV17DansChamp(false);
 }
 
 async function genererRelanceIA() {
