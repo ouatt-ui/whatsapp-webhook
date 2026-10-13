@@ -196,6 +196,16 @@ main{padding:24px 28px;min-width:0}.workspace-panel{display:none!important}.work
 @media(max-width:1100px){.layout{grid-template-columns:250px 1fr}.cards{grid-template-columns:repeat(2,1fr)}main{padding:18px}}
 @media(max-width:900px){.layout{grid-template-columns:1fr}aside{position:relative;top:0;height:auto}.cards{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:650px){.cards{grid-template-columns:1fr}main{padding:14px}}
+
+/* Boîte de réception WhatsApp — responsive bureau et smartphone */
+.wa-layout{display:grid;grid-template-columns:minmax(240px, .8fr) minmax(0,1.5fr);gap:14px;margin-top:14px;min-height:520px}
+.wa-list-pane,.wa-chat-pane{border:1px solid #dfe6ef;border-radius:12px;background:#fff;min-width:0;overflow:hidden}
+.wa-list-pane{padding:12px}.wa-conversation{width:100%;text-align:left;background:#fff;border:0;border-bottom:1px solid #edf0f5;border-radius:8px;padding:12px;margin:0;color:#10213d;display:block}
+.wa-conversation.selected{background:#eaf2ff}.wa-conversation strong{display:block;overflow-wrap:anywhere}.wa-conversation small{display:block;color:#667085;margin-top:4px;overflow-wrap:anywhere}.wa-chat-pane{display:flex;flex-direction:column;min-height:520px}
+.wa-chat-header{padding:14px;border-bottom:1px solid #edf0f5;display:flex;flex-direction:column;gap:5px}.wa-chat-header span{font-size:12px;color:#667085}
+.wa-messages{flex:1;min-height:220px;max-height:55vh;overflow:auto;padding:14px;background:#f5f7fb}.wa-bubble{padding:10px 12px;border-radius:12px;margin:8px 0;max-width:88%;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.45;font-size:14px}.wa-in{background:#fff;border:1px solid #e1e6ee;margin-right:auto}.wa-out{background:#d9fdd3;margin-left:auto}.wa-time{font-size:10px;color:#667085;margin-top:5px;text-align:right}.wa-controls{padding:12px;border-top:1px solid #edf0f5;display:grid;gap:9px}.wa-controls textarea{width:100%;resize:vertical;border:1px solid #ccd4df;border-radius:8px;padding:11px;font:inherit}.wa-mode-row{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}.wa-mode-row button{width:auto;background:#fff2cc;color:#8a5a00}.wa-mode-row button.bot-on{background:#e7f7ee;color:#087443}
+@media(max-width:700px){.wa-layout{grid-template-columns:1fr;min-height:0}.wa-list-pane{max-height:270px;overflow:auto}.wa-chat-pane{min-height:60vh}.wa-messages{max-height:none;min-height:220px}.wa-controls button{width:100%}}
+
 </style>
 </head>
 <body>
@@ -225,6 +235,7 @@ main{padding:24px 28px;min-width:0}.workspace-panel{display:none!important}.work
 <button class="workspace-nav" data-workspace="devis" onclick="showWorkspace('devis')">📄 Suivi des devis V1.9</button>
 <button class="workspace-nav" data-workspace="rapport" onclick="showWorkspace('rapport')">🤖 Rapport commercial IA V1.6</button>
 <button class="workspace-nav" data-workspace="prospects" onclick="showWorkspace('prospects')">🔎 Recherche des prospects</button>
+<button class="workspace-nav" data-workspace="whatsapp" onclick="showWorkspace('whatsapp');chargerBoiteWhatsApp()">🟢 WhatsApp — Conversations</button>
 <button class="workspace-nav" data-workspace="prospect-history" onclick="showWorkspace('prospect-history');chargerHistoriqueV23()">🗂️ Historique / restauration</button>
 </aside>
 
@@ -482,6 +493,29 @@ main{padding:24px 28px;min-width:0}.workspace-panel{display:none!important}.work
 <input id="historySearchV23" placeholder="Rechercher dans l'historique..." oninput="filtrerHistoriqueV23()" style="padding:11px;border:1px solid #ccd4df;border-radius:8px">
 <button class="primary" style="width:auto" onclick="restaurerSelectionV23()">♻️ Restaurer la sélection</button></div>
 <div id="historyListV23"><p style="color:#667085">Chargement...</p></div>
+</section></section>
+<section class="workspace-panel" data-workspace="whatsapp">
+<section class="panel">
+ <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+  <div><h2 style="margin:0">🟢 WhatsApp — conversations du chatbot</h2><p style="color:#667085;margin:7px 0 0">Suivez les échanges, intervenez manuellement et réactivez le chatbot quand vous le souhaitez.</p></div>
+  <button class="primary" style="width:auto" onclick="chargerBoiteWhatsApp()">↻ Actualiser</button>
+ </div>
+ <div class="wa-layout">
+  <div class="wa-list-pane"><input id="waSearch" placeholder="Rechercher un prospect…" oninput="filtrerConversationsWA()" style="width:100%;margin:12px 0">
+   <div id="waConversationList"><p style="color:#667085">Chargement des conversations…</p></div>
+  </div>
+  <div class="wa-chat-pane">
+   <div id="waChatHeader" class="wa-chat-header"><strong>Sélectionne une conversation</strong><span>Les échanges apparaîtront ici.</span></div>
+   <div id="waMessages" class="wa-messages"><p style="color:#667085;text-align:center">Choisis un prospect dans la liste.</p></div>
+   <div id="waControls" class="wa-controls" style="display:none">
+    <div class="wa-mode-row"><span id="waModeLabel" class="status">Chatbot actif</span><button id="waModeBtn" onclick="basculerModeWA()">Reprendre la main</button></div>
+    <textarea id="waReplyText" rows="3" placeholder="Écris ta réponse…"></textarea>
+    <button class="primary" onclick="envoyerReponseWA()">Envoyer la réponse</button>
+    <small style="color:#667085">L’envoi passe par WhatsApp Cloud API. Le mode humain reste actif après une réponse manuelle.</small>
+   </div>
+  </div>
+ </div>
+ <div id="waStatus" role="status" style="margin-top:12px;color:#667085;font-size:13px"></div>
 </section></section>
 </main>
 </div>
@@ -2746,5 +2780,30 @@ function showWorkspace(name){
 }
 document.addEventListener('DOMContentLoaded',function(){showWorkspace('dashboard');});
 </script>
+<script>
+let conversationsWA=[],selectedWA=null,messagesWA=[];
+async function chargerBoiteWhatsApp(){
+ const list=document.getElementById('waConversationList'),status=document.getElementById('waStatus');
+ if(!list)return;list.innerHTML='<p style="color:#667085">Chargement…</p>';status.textContent='';
+ try{const r=await fetch('/crm/whatsapp/conversations',{cache:'no-store'}),d=await r.json();if(!r.ok||!d.success)throw new Error(d.message||'Impossible de charger les conversations.');conversationsWA=d.conversations||[];afficherConversationsWA();
+  if(selectedWA){const fresh=conversationsWA.find(x=>String(x.whatsapp_id)===String(selectedWA.whatsapp_id));if(fresh)await ouvrirConversationWA(fresh.whatsapp_id);else{selectedWA=null;document.getElementById('waMessages').innerHTML='<p style="text-align:center;color:#667085">Choisis une conversation.</p>';}}
+  status.textContent=conversationsWA.length+' conversation(s) chargée(s).';
+ }catch(e){list.innerHTML='<p style="color:#b42318">'+echapperWA(e.message)+'</p>';status.textContent='Vérifie que Render et MySQL sont disponibles.';}
+}
+function echapperWA(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function filtrerConversationsWA(){afficherConversationsWA();}
+function afficherConversationsWA(){const box=document.getElementById('waConversationList');if(!box)return;const q=(document.getElementById('waSearch')?.value||'').toLowerCase();const arr=conversationsWA.filter(p=>[p.nom,p.whatsapp_id,p.telephone,p.entreprise,p.dernier_message].some(v=>String(v||'').toLowerCase().includes(q)));if(!arr.length){box.innerHTML='<p style="color:#667085">Aucune conversation trouvée.</p>';return;}box.innerHTML=arr.map(p=>`<button class="wa-conversation ${selectedWA&&String(selectedWA.whatsapp_id)===String(p.whatsapp_id)?'selected':''}" onclick="ouvrirConversationWA('${String(p.whatsapp_id).replace(/[^0-9]/g,'')}')"><strong>${echapperWA(p.nom||p.entreprise||p.whatsapp_id)}</strong><small>${echapperWA(p.whatsapp_id)} · ${String(p.assistance_mode||'BOT').toUpperCase()==='HUMAIN'?'👤 Mode humain':'🤖 Chatbot actif'}</small><small>${echapperWA((p.dernier_message||'Aucun message').slice(0,90))}</small></button>`).join('');}
+async function ouvrirConversationWA(phone){
+ const p=typeof phone==='object'?phone:conversationsWA.find(x=>String(x.whatsapp_id)===String(phone));if(!p)return;selectedWA=p;afficherConversationsWA();document.getElementById('waControls').style.display='grid';
+ document.getElementById('waChatHeader').innerHTML=`<strong>${echapperWA(p.nom||p.entreprise||p.whatsapp_id)}</strong><span>${echapperWA(p.whatsapp_id)} · ${echapperWA(p.entreprise||'Prospect VisionProspect')}</span>`;
+ const box=document.getElementById('waMessages');box.innerHTML='<p style="color:#667085">Chargement des messages…</p>';
+ try{const r=await fetch('/crm/messages/'+encodeURIComponent(p.whatsapp_id),{cache:'no-store'}),d=await r.json();if(!r.ok||!d.success)throw new Error(d.message||'Erreur de lecture');messagesWA=d.messages||[];box.innerHTML=messagesWA.map(m=>`<div class="wa-bubble ${m.direction==='entrant'?'wa-in':'wa-out'}">${echapperWA(m.message||'')}<div class="wa-time">${m.direction==='entrant'?'Prospect':'VisionProtection'} · ${m.created_at?new Date(m.created_at).toLocaleString('fr-FR'):''}</div></div>`).join('')||'<p style="color:#667085;text-align:center">Aucun message enregistré.</p>';box.scrollTop=box.scrollHeight;
+  const human=String(p.assistance_mode||'BOT').toUpperCase()==='HUMAIN';document.getElementById('waModeLabel').textContent=human?'👤 Mode humain actif':'🤖 Chatbot actif';const btn=document.getElementById('waModeBtn');btn.textContent=human?'Réactiver le chatbot':'Reprendre la main';btn.classList.toggle('bot-on',human);
+ }catch(e){box.innerHTML='<p style="color:#b42318">'+echapperWA(e.message)+'</p>';}
+}
+async function basculerModeWA(){if(!selectedWA)return;const human=String(selectedWA.assistance_mode||'BOT').toUpperCase()==='HUMAIN';const mode=human?'BOT':'HUMAIN';try{const r=await fetch('/crm/whatsapp/'+encodeURIComponent(selectedWA.whatsapp_id)+'/mode',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode})});const d=await r.json();if(!r.ok||!d.success)throw new Error(d.message||'Échec du changement de mode.');selectedWA.assistance_mode=mode;const p=conversationsWA.find(x=>String(x.whatsapp_id)===String(selectedWA.whatsapp_id));if(p)p.assistance_mode=mode;document.getElementById('waStatus').textContent=d.message;afficherConversationsWA();await ouvrirConversationWA(selectedWA.whatsapp_id);}catch(e){document.getElementById('waStatus').textContent=e.message;}}
+async function envoyerReponseWA(){if(!selectedWA)return;const input=document.getElementById('waReplyText'),message=input.value.trim();if(!message){input.focus();return;}if(!confirm('Envoyer cette réponse WhatsApp à '+(selectedWA.nom||selectedWA.whatsapp_id)+' ?'))return;const btn=document.querySelector('#waControls button.primary');btn.disabled=true;try{const r=await fetch('/crm/whatsapp/'+encodeURIComponent(selectedWA.whatsapp_id)+'/reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message})});const d=await r.json();if(!r.ok||!d.success)throw new Error(d.message||'Échec de l’envoi.');input.value='';selectedWA.assistance_mode='HUMAIN';const p=conversationsWA.find(x=>String(x.whatsapp_id)===String(selectedWA.whatsapp_id));if(p)p.assistance_mode='HUMAIN';document.getElementById('waStatus').textContent=d.message;await chargerBoiteWhatsApp();}catch(e){document.getElementById('waStatus').textContent='Envoi non confirmé : '+e.message;}finally{btn.disabled=false;}}
+</script>
+
 </body>
 </html>
