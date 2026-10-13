@@ -273,6 +273,7 @@ await pool.query(`
   await ensureColumn('prospects','archive_status',"VARCHAR(20) DEFAULT 'ACTIF'");
   await ensureColumn('prospects','archived_at','TIMESTAMP NULL');
   await ensureColumn('prospects','archive_reason','VARCHAR(100) NULL');
+  await ensureColumn('prospects','assistance_mode',"VARCHAR(20) NOT NULL DEFAULT 'BOT'");
   await pool.query(`CREATE TABLE IF NOT EXISTS prospects_historique(
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     prospect_id INT NOT NULL,
@@ -566,7 +567,19 @@ async function processMessage(from,name,text,waId=null,type="text"){
 }
 async function sendText(to,body){if(!WHATSAPP_TOKEN||!PHONE_NUMBER_ID)throw new Error("WHATSAPP_ACCESS_TOKEN ou WHATSAPP_PHONE_NUMBER_ID manquant.");return (await axios.post(WHATSAPP_API_URL,{messaging_product:"whatsapp",recipient_type:"individual",to:normalizeForApi(to),type:"text",text:{preview_url:false,body}},{headers:{Authorization:`Bearer ${WHATSAPP_TOKEN}`,"Content-Type":"application/json"},timeout:30000})).data;}
 app.get("/webhook",(req,res)=>{if(req.query["hub.mode"]==="subscribe"&&req.query["hub.verify_token"]===VERIFY_TOKEN){console.log("✅ WEBHOOK META VÉRIFIÉ");return res.status(200).send(req.query["hub.challenge"]);}res.sendStatus(403);});
-app.post("/webhook",(req,res)=>{console.log("===== WEBHOOK WHATSAPP =====");console.log(JSON.stringify(req.body,null,2));res.sendStatus(200);try{for(const item of req.body?.entry||[])for(const change of item?.changes||[]){const v=change?.value;if(!v)continue;if(!v.messages?.length){if(v.statuses)console.log("STATUS WHATSAPP :",JSON.stringify(v.statuses,null,2));continue;}const contacts=v.contacts||[];for(const m of v.messages){const from=m.from,c=contacts.find(x=>x.wa_id===from)||contacts[0]||{},name=c?.profile?.name||"";let t="",type=m.type||"unknown";if(type==="text")t=m.text?.body||"";else if(type==="interactive"){const i=m.interactive||{};t=i.type==="button_reply"?(i.button_reply?.id||i.button_reply?.title||""):(i.list_reply?.id||i.list_reply?.title||"");}else if(type==="button")t=m.button?.text||m.button?.payload||"";if(!t)continue;processMessage(from,name,t,m.id||null,type).then(r=>sendText(from,r)).then(x=>console.log("✅ REPONSE WHATSAPP ENVOYÉE :",JSON.stringify(x))).catch(e=>console.error("❌ ERREUR TRAITEMENT / ENVOI :",e.response?.data||e.message));}}}catch(e){console.error("❌ ERREUR WEBHOOK :",e);}});
+app.post("/webhook",(req,res)=>{console.log("===== WEBHOOK WHATSAPP =====");console.log(JSON.stringify(req.body,null,2));res.sendStatus(200);try{for(const item of req.body?.entry||[])for(const change of item?.changes||[]){const v=change?.value;if(!v)continue;if(!v.messages?.length){if(v.statuses)console.log("STATUS WHATSAPP :",JSON.stringify(v.statuses,null,2));continue;}const contacts=v.contacts||[];for(const m of v.messages){const from=m.from,c=contacts.find(x=>x.wa_id===from)||contacts[0]||{},name=c?.profile?.name||"";let t="",type=m.type||"unknown";if(type==="text")t=m.text?.body||"";else if(type==="interactive"){const i=m.interactive||{};t=i.type==="button_reply"?(i.button_reply?.id||i.button_reply?.title||""):(i.list_reply?.id||i.list_reply?.title||"");}else if(type==="button")t=m.button?.text||m.button?.payload||"";if(!t)continue;(async()=>{
+  try{
+    if(dbReady&&pool){
+      const [humanRows]=await pool.query("SELECT assistance_mode FROM prospects WHERE whatsapp_id=? LIMIT 1",[from]);
+      if(humanRows.length&&String(humanRows[0].assistance_mode||"BOT").toUpperCase()==="HUMAIN"){
+        const s=await getSession(from,name); await addHistory(s,"entrant",t,m.id||null,type);
+        console.log("📩 Message entrant enregistré — mode humain actif pour",from); return;
+      }
+    }
+    const r=await processMessage(from,name,t,m.id||null,type); const x=await sendText(from,r);
+    console.log("✅ REPONSE WHATSAPP ENVOYÉE :",JSON.stringify(x));
+  }catch(e){console.error("❌ ERREUR TRAITEMENT / ENVOI :",e.response?.data||e.message);}
+})();}}}catch(e){console.error("❌ ERREUR WEBHOOK :",e);}});
 app.get("/crm/prospects",async(req,res)=>{try{if(dbReady){const[r]=await pool.query("SELECT * FROM prospects WHERE COALESCE(archive_status,'ACTIF')='ACTIF' ORDER BY updated_at DESC");return res.json({success:true,count:r.length,prospects:r,database:"mysql"});}return res.json({success:true,count:sessions.size,prospects:[...sessions.values()],database:"memory-fallback"});}catch(e){res.status(500).json({success:false,message:e.message});}});
 
 // V2.3 — Historique / sauvegarde / suppression réversible des prospects
@@ -726,6 +739,51 @@ app.get("/crm/prospect/:phone",async(req,res)=>{try{const p=dbReady?await loadPr
       message:e.message
     });
   }
+});
+// VisionProspect — boîte de réception WhatsApp et intervention humaine
+app.get("/crm/whatsapp/conversations",async(req,res)=>{
+  try{
+    if(!dbReady||!pool)return res.status(503).json({success:false,message:"Base MySQL indisponible."});
+    const [rows]=await pool.query(`
+      SELECT p.id,p.whatsapp_id,p.telephone,p.nom,p.entreprise,p.assistance_mode,p.updated_at,
+        (SELECT m.message FROM messages m WHERE m.prospect_id=p.id ORDER BY m.id DESC LIMIT 1) AS dernier_message,
+        (SELECT m.direction FROM messages m WHERE m.prospect_id=p.id ORDER BY m.id DESC LIMIT 1) AS derniere_direction,
+        (SELECT m.created_at FROM messages m WHERE m.prospect_id=p.id ORDER BY m.id DESC LIMIT 1) AS derniere_date,
+        (SELECT COUNT(*) FROM messages m WHERE m.prospect_id=p.id AND m.direction='entrant') AS messages_recus
+      FROM prospects p WHERE COALESCE(p.archive_status,'ACTIF')='ACTIF'
+      AND EXISTS(SELECT 1 FROM messages m WHERE m.prospect_id=p.id)
+      ORDER BY COALESCE(derniere_date,p.updated_at) DESC LIMIT 300`);
+    res.json({success:true,conversations:rows,database:"mysql"});
+  }catch(e){res.status(500).json({success:false,message:e.message});}
+});
+app.put("/crm/whatsapp/:phone/mode",async(req,res)=>{
+  try{
+    if(!dbReady||!pool)return res.status(503).json({success:false,message:"Base MySQL indisponible."});
+    const mode=String(req.body?.mode||"").toUpperCase();
+    if(!["BOT","HUMAIN"].includes(mode))return res.status(400).json({success:false,message:"Mode invalide."});
+    const phone=String(req.params.phone||"").replace(/[^0-9]/g,"");
+    const [r]=await pool.query("UPDATE prospects SET assistance_mode=?,updated_at=CURRENT_TIMESTAMP WHERE whatsapp_id=? OR telephone=?",[mode,phone,phone]);
+    if(!r.affectedRows)return res.status(404).json({success:false,message:"Prospect introuvable."});
+    res.json({success:true,mode,message:mode==="HUMAIN"?"Mode humain activé : le chatbot ne répondra plus automatiquement à ce prospect.":"Chatbot réactivé pour ce prospect."});
+  }catch(e){res.status(500).json({success:false,message:e.message});}
+});
+app.post("/crm/whatsapp/:phone/reply",async(req,res)=>{
+  try{
+    if(!dbReady||!pool)return res.status(503).json({success:false,message:"Base MySQL indisponible."});
+    const phone=String(req.params.phone||"").replace(/[^0-9]/g,"");
+    const message=String(req.body?.message||"").trim();
+    if(!message)return res.status(400).json({success:false,message:"Le message est vide."});
+    if(message.length>4000)return res.status(400).json({success:false,message:"Le message dépasse 4 000 caractères."});
+    const [rows]=await pool.query("SELECT * FROM prospects WHERE whatsapp_id=? OR telephone=? LIMIT 1",[phone,phone]);
+    if(!rows.length)return res.status(404).json({success:false,message:"Prospect introuvable."});
+    const prospect=rows[0],dest=normalizeForApi(prospect.whatsapp_id||prospect.telephone);
+    // Pause automatique avant la réponse humaine afin d'éviter un doublon du chatbot.
+    await pool.query("UPDATE prospects SET assistance_mode='HUMAIN' WHERE id=?",[prospect.id]);
+    const result=await sendText(dest,message);
+    await pool.query("INSERT INTO messages(prospect_id,whatsapp_message_id,direction,message,message_type) VALUES(?,?,?,?,?)",[prospect.id,result?.messages?.[0]?.id||null,"sortant",message,"text"]);
+    await pool.query("UPDATE prospects SET updated_at=CURRENT_TIMESTAMP WHERE id=?",[prospect.id]);
+    res.json({success:true,message:"Réponse envoyée. Le mode humain reste actif.",whatsapp_message_id:result?.messages?.[0]?.id||null});
+  }catch(e){res.status(500).json({success:false,message:e.response?.data?.error?.message||e.message});}
 });
 app.get("/crm/messages/:phone",async(req,res)=>{try{if(!dbReady)return res.json({success:true,database:"memory-fallback",messages:[]});const id=await getProspectId(req.params.phone);if(!id)return res.status(404).json({success:false,message:"Prospect introuvable"});const[r]=await pool.query("SELECT * FROM messages WHERE prospect_id=? ORDER BY id ASC",[id]);res.json({success:true,count:r.length,messages:r,database:"mysql"});}catch(e){res.status(500).json({success:false,message:e.message});}});
 app.get("/crm/notes/:phone",async(req,res)=>{try{if(!dbReady)return res.json({success:true,database:"memory-fallback",notes:[]});const id=await getProspectId(req.params.phone);if(!id)return res.status(404).json({success:false,message:"Prospect introuvable"});const[r]=await pool.query("SELECT * FROM notes_commerciales WHERE prospect_id=? ORDER BY id DESC",[id]);res.json({success:true,count:r.length,notes:r,database:"mysql"});}catch(e){res.status(500).json({success:false,message:e.message});}});
@@ -2573,7 +2631,7 @@ app.get('/robot/web-search-diagnostic', (req,res)=>{
   });
 });
 
-app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.0.4",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
+app.get("/",(req,res)=>res.json({success:true,application:"VisionProtection WhatsApp CRM",version:"2.0.4",database:dbReady?"mysql-connected":"memory-fallback",graphApi:GRAPH_VERSION,webhook:"/webhook",crm:"/crm/prospects",messages:"/crm/messages/:phone",whatsappInbox:"/crm/whatsapp/conversations",notes:"/crm/notes/:phone",stats:"/crm/stats",status:"online"}));
 
 
 // ================== DEVIS V1.8 ==================
