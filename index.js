@@ -800,6 +800,9 @@ app.get("/crm/stats",async(req,res)=>{try{if(dbReady){const[[t]]=await pool.quer
 app.get("/assistant", (req, res) => {
   res.sendFile(__dirname + "/public/assistant.html");
 });
+app.get("/assistant_mobile.html", (req, res) => {
+  res.sendFile(__dirname + "/public/assistant_mobile.html");
+});
   // ================== PROSPECTS À RELANCER V1 ==================
 
 app.get("/robot/prospects-relance", async (req, res) => {
