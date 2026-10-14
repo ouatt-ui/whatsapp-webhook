@@ -201,6 +201,23 @@ const GRAPH_VERSION="v26.0";
 const WHATSAPP_API_URL=`https://graph.facebook.com/${GRAPH_VERSION}/${PHONE_NUMBER_ID}/messages`;
 const sessions=new Map();
 
+const whatsappEventClients = new Set();
+
+function notifierChangementWhatsApp(type = "messages") {
+  const payload = JSON.stringify({
+    type,
+    at: new Date().toISOString()
+  });
+
+  for (const client of whatsappEventClients) {
+    try {
+      client.write(`event: whatsapp-update\ndata: ${payload}\n\n`);
+    } catch (e) {
+      whatsappEventClients.delete(client);
+    }
+  }
+}
+
 // File de qualification IA V2.2.2 : les requêtes HTTP ne restent plus bloquées par Gemini.
 const prospectionAiJobsV222=new Map();
 
@@ -572,12 +589,12 @@ app.post("/webhook",(req,res)=>{console.log("===== WEBHOOK WHATSAPP =====");cons
     if(dbReady&&pool){
       const [humanRows]=await pool.query("SELECT assistance_mode FROM prospects WHERE whatsapp_id=? LIMIT 1",[from]);
       if(humanRows.length&&String(humanRows[0].assistance_mode||"BOT").toUpperCase()==="HUMAIN"){
-        const s=await getSession(from,name); await addHistory(s,"entrant",t,m.id||null,type);
+        const s=await getSession(from,name); await addHistory(s,"entrant",t,m.id||null,type);notifierChangementWhatsApp("message");
         console.log("📩 Message entrant enregistré — mode humain actif pour",from); return;
       }
     }
     const r=await processMessage(from,name,t,m.id||null,type); const x=await sendText(from,r);
-    console.log("✅ REPONSE WHATSAPP ENVOYÉE :",JSON.stringify(x));
+    console.log("✅ REPONSE WHATSAPP ENVOYÉE :",JSON.stringify(x));notifierChangementWhatsApp("message");
   }catch(e){console.error("❌ ERREUR TRAITEMENT / ENVOI :",e.response?.data||e.message);}
 })();}}}catch(e){console.error("❌ ERREUR WEBHOOK :",e);}});
 app.get("/crm/prospects",async(req,res)=>{try{if(dbReady){const[r]=await pool.query("SELECT * FROM prospects WHERE COALESCE(archive_status,'ACTIF')='ACTIF' ORDER BY updated_at DESC");return res.json({success:true,count:r.length,prospects:r,database:"mysql"});}return res.json({success:true,count:sessions.size,prospects:[...sessions.values()],database:"memory-fallback"});}catch(e){res.status(500).json({success:false,message:e.message});}});
@@ -741,6 +758,29 @@ app.get("/crm/prospect/:phone",async(req,res)=>{try{const p=dbReady?await loadPr
   }
 });
 // VisionProspect — boîte de réception WhatsApp et intervention humaine
+
+app.get("/crm/whatsapp/events",(req,res)=>{
+  res.status(200);
+  res.set({
+    "Content-Type":"text/event-stream; charset=utf-8",
+    "Cache-Control":"no-cache, no-transform",
+    "Connection":"keep-alive",
+    "X-Accel-Buffering":"no"
+  });
+  if(typeof res.flushHeaders==="function") res.flushHeaders();
+  res.write("event: connected\ndata: {}\n\n");
+  whatsappEventClients.add(res);
+
+  const heartbeat=setInterval(()=>{
+    try{res.write(": keep-alive\n\n");}catch(e){}
+  },25000);
+
+  req.on("close",()=>{
+    clearInterval(heartbeat);
+    whatsappEventClients.delete(res);
+  });
+});
+
 app.get("/crm/whatsapp/conversations",async(req,res)=>{
   try{
     if(!dbReady||!pool)return res.status(503).json({success:false,message:"Base MySQL indisponible."});
