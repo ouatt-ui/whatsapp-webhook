@@ -2883,5 +2883,36 @@ async function envoyerReponseWA(){if(!selectedWA)return;const input=document.get
 (function(){const oldShow=window.showWorkspace;window.showWorkspace=function(name){oldShow(name);document.querySelectorAll('.mobile-bottom-nav [data-mob]').forEach(b=>b.classList.toggle('active',b.dataset.mob===name));};})();
 </script>
 
+
+<script>
+/* VisionProspect — actualisation temps réel de la boîte WhatsApp sur PC et mobile */
+(function connecterTempsReelVisionProspect(){
+  if (!("EventSource" in window)) return;
+  let actualisationPlanifiee = false;
+  const source = new EventSource("/crm/whatsapp/events");
+  source.addEventListener("whatsapp-update", function(){
+    if (actualisationPlanifiee) return;
+    actualisationPlanifiee = true;
+    setTimeout(async function(){
+      actualisationPlanifiee = false;
+      if (document.visibilityState !== "visible") return;
+      if (typeof chargerBoiteWhatsApp === "function" &&
+          document.getElementById("waConversationList")) {
+        await chargerBoiteWhatsApp();
+      }
+    }, 300);
+  });
+  source.addEventListener("open", function(){
+    const status = document.getElementById("waStatus");
+    if (status) status.dataset.realtime = "connected";
+  });
+  source.addEventListener("error", function(){
+    const status = document.getElementById("waStatus");
+    if (status) status.dataset.realtime = "reconnecting";
+    /* EventSource se reconnecte automatiquement. */
+  });
+})();
+</script>
+
 </body>
 </html>
