@@ -193,6 +193,7 @@ const gemini=process.env.GEMINI_API_KEY
   ? new GoogleGenAI({apiKey:process.env.GEMINI_API_KEY})
   : null;
 const app=express(); app.use(express.json());
+app.use(express.static(__dirname + "/public"));
 const PORT=process.env.PORT||3000;
 const VERIFY_TOKEN=process.env.META_VERIFY_TOKEN||"visionprotection2024";
 const WHATSAPP_TOKEN=process.env.WHATSAPP_ACCESS_TOKEN||"";
