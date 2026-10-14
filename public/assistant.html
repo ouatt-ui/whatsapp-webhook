@@ -2836,5 +2836,36 @@ async function basculerModeWA(){if(!selectedWA)return;const human=String(selecte
 async function envoyerReponseWA(){if(!selectedWA)return;const input=document.getElementById('waReplyText'),message=input.value.trim();if(!message){input.focus();return;}if(!confirm('Envoyer cette réponse WhatsApp à '+(selectedWA.nom||selectedWA.whatsapp_id)+' ?'))return;const btn=document.querySelector('#waControls button.primary');btn.disabled=true;try{const r=await fetch('/crm/whatsapp/'+encodeURIComponent(selectedWA.whatsapp_id)+'/reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message})});const d=await r.json();if(!r.ok||!d.success)throw new Error(d.message||'Échec de l’envoi.');input.value='';selectedWA.assistance_mode='HUMAIN';const p=conversationsWA.find(x=>String(x.whatsapp_id)===String(selectedWA.whatsapp_id));if(p)p.assistance_mode='HUMAIN';document.getElementById('waStatus').textContent=d.message;await chargerBoiteWhatsApp();}catch(e){document.getElementById('waStatus').textContent='Envoi non confirmé : '+e.message;}finally{btn.disabled=false;}}
 </script>
 
+
+<script>
+/* VisionProspect — actualisation temps réel de la boîte WhatsApp sur PC et mobile */
+(function connecterTempsReelVisionProspect(){
+  if (!("EventSource" in window)) return;
+  let actualisationPlanifiee = false;
+  const source = new EventSource("/crm/whatsapp/events");
+  source.addEventListener("whatsapp-update", function(){
+    if (actualisationPlanifiee) return;
+    actualisationPlanifiee = true;
+    setTimeout(async function(){
+      actualisationPlanifiee = false;
+      if (document.visibilityState !== "visible") return;
+      if (typeof chargerBoiteWhatsApp === "function" &&
+          document.getElementById("waConversationList")) {
+        await chargerBoiteWhatsApp();
+      }
+    }, 300);
+  });
+  source.addEventListener("open", function(){
+    const status = document.getElementById("waStatus");
+    if (status) status.dataset.realtime = "connected";
+  });
+  source.addEventListener("error", function(){
+    const status = document.getElementById("waStatus");
+    if (status) status.dataset.realtime = "reconnecting";
+    /* EventSource se reconnecte automatiquement. */
+  });
+})();
+</script>
+
 </body>
 </html>
