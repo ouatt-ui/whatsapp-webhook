@@ -511,7 +511,7 @@ function normalizeForApi(phone){
   if(n.length===9) return "225"+n;
   return n;
 }
-function isConversationStart(text){const n=String(text||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();return n==="menu"||n==="start"||n==="0"||/^(bonjour|bjr|bonsoir|slt|salut)\b/.test(n);}
+function isConversationStart(text){const n=String(text||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();return n==="menu"||n==="start"||n==="0"||/^(bonjour|bjr|bonsoir|slt|salut|coucou)[.! ]*$/.test(n);}
 async function getSession(phone,name=""){
  if(sessions.has(phone)){const s=sessions.get(phone);if(name&&!s.name)s.name=name;return s;}
 const stored=await loadProspect(phone);
@@ -567,10 +567,131 @@ Merci pour votre message.
 function serviceQuestion(s){const q={"Vidéosurveillance":`Très bien 👍\n\nPour quel type de site souhaitez-vous installer la vidéosurveillance ?\n\n1️⃣ Maison\n2️⃣ Bureau\n3️⃣ Commerce\n4️⃣ Hôtel\n5️⃣ Usine\n6️⃣ Autre`,"Contrôle d'accès":`Très bien 👍\n\nQuel type de contrôle d'accès recherchez-vous ?\n\n1️⃣ Une porte\n2️⃣ Plusieurs portes\n3️⃣ Immeuble\n4️⃣ Hôtel\n5️⃣ Entreprise\n6️⃣ Autre`,"Alarme intrusion":`Très bien 👍\n\nPour quel type de site souhaitez-vous l'alarme intrusion ?\n\n1️⃣ Maison\n2️⃣ Bureau\n3️⃣ Commerce\n4️⃣ Hôtel\n5️⃣ Usine\n6️⃣ Autre`,"SSI / CMSI":`Très bien 👍\n\nPour quel type de bâtiment souhaitez-vous le système SSI / CMSI ?\n\n1️⃣ Hôtel\n2️⃣ Immeuble\n3️⃣ Bureau\n4️⃣ Usine\n5️⃣ Commerce\n6️⃣ Établissement public\n7️⃣ Autre`,"Motorisation de portail":`Très bien 👍\n\nQuel type de portail souhaitez-vous motoriser ?\n\n1️⃣ Portail coulissant\n2️⃣ Portail battant\n3️⃣ Portail industriel\n4️⃣ Barrière automatique\n5️⃣ Autre`,"Domotique":`Très bien 👍\n\nQuelle solution domotique vous intéresse ?\n\n1️⃣ Éclairage\n2️⃣ Climatisation\n3️⃣ Sécurité\n4️⃣ Contrôle à distance\n5️⃣ Hôtel / chambre\n6️⃣ Maison intelligente\n7️⃣ Autre`,"Réseau informatique":`Très bien 👍\n\nQuel type de réseau informatique souhaitez-vous ?\n\n1️⃣ Réseau entreprise\n2️⃣ Wi-Fi\n3️⃣ VLAN\n4️⃣ Fibre / liaison\n5️⃣ Baie informatique\n6️⃣ Autre`};return q[s]||null;}
 function choiceLabel(c,s){const m={"Vidéosurveillance":["Maison","Bureau","Commerce","Hôtel","Usine","Autre"],"Contrôle d'accès":["Une porte","Plusieurs portes","Immeuble","Hôtel","Entreprise","Autre"],"Alarme intrusion":["Maison","Bureau","Commerce","Hôtel","Usine","Autre"],"SSI / CMSI":["Hôtel","Immeuble","Bureau","Usine","Commerce","Établissement public","Autre"],"Motorisation de portail":["Portail coulissant","Portail battant","Portail industriel","Barrière automatique","Autre"],"Domotique":["Éclairage","Climatisation","Sécurité","Contrôle à distance","Hôtel / chambre","Maison intelligente","Autre"],"Réseau informatique":["Réseau entreprise","Wi-Fi","VLAN","Fibre / liaison","Baie informatique","Autre"]};return m[s]?.[Number(c)-1]||c;}
 function quoteRequestMessage(){return`Parfait 👍\n\nPour préparer votre demande de devis, indiquez-moi :\n\n📍 *La localisation du projet*\n📝 *Une courte description du besoin*\n🔢 *La quantité approximative* (caméras, portes, équipements, etc.)\n\nVous pouvez répondre en une seule fois ou étape par étape.`;}
+
+// ================== AGENT IA WHATSAPP : REPLI DU CHATBOT ==================
+function estQuestionLibreWhatsApp(texte) {
+  const brut = String(texte || "").trim();
+  const n = brut.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (!n || /^\d+$/.test(n)) return false;
+  return /[?¿]/.test(brut) ||
+    /\b(combien|prix|tarif|cout|coût|comment|pourquoi|quel|quelle|quels|quelles|est ce que|est-ce que|pouvez vous|pouvez-vous|avez vous|avez-vous|je voudrais savoir|j'aimerais savoir|expliquez|fonctionne|disponible|garantie|installez vous|installez-vous)\b/.test(n);
+}
+
+async function repondreWhatsAppAvecIA(session, message) {
+  const historique = (session.history || []).slice(-12).map(x => ({
+    sens: x.direction === "entrant" ? "Prospect" : "VisionProtection",
+    message: String(x.text || "").slice(0, 1200)
+  }));
+
+  const prompt = `
+Tu es l'agent commercial IA de VisionProtection & Informatique à Abidjan, en Côte d'Ivoire.
+Tu interviens en complément du chatbot WhatsApp quand une demande libre ne correspond pas à ses menus.
+Services confirmés : vidéosurveillance, contrôle d'accès, alarme intrusion, SSI/CMSI, motorisation de portail, domotique, réseau informatique et demandes de devis.
+
+RÈGLES IMPORTANTES :
+- Réponds en français, naturellement, clairement, avec un ton professionnel et chaleureux.
+- Réponds directement à la question du prospect en tenant compte de l'historique.
+- Ne prétends pas connaître un prix, une disponibilité, une caractéristique technique ou une garantie qui n'est pas fournie dans le contexte.
+- Si des détails sont nécessaires, pose au maximum 2 questions courtes pour préciser le besoin.
+- Pour un prix ou un devis personnalisé, explique que l'équipe doit confirmer les détails et propose de transmettre la demande à un conseiller.
+- Si tu ne peux pas répondre de façon fiable, dis-le honnêtement et invite le prospect à taper 9 pour parler à un conseiller.
+- Ne prétends jamais qu'un devis, une commande ou une intervention a été validé.
+- Réponds uniquement avec le message à envoyer sur WhatsApp, sans titre ni commentaire technique.
+
+ÉTAT ACTUEL DU PROSPECT :
+${JSON.stringify({
+  nom: session.name || "Non communiqué",
+  service: session.service || null,
+  type_site: session.siteType || null,
+  localisation: session.location || null,
+  projet: session.project || null,
+  quantite: session.quantity || null,
+  delai: session.delay || null,
+  historique
+}, null, 2)}
+
+NOUVEAU MESSAGE :
+${String(message || "").slice(0, 3000)}
+`;
+  const result = await callGemini(prompt, { max503Retries: 1 });
+  const answer = String(result.text || "").trim();
+  if (!answer) throw new Error("Réponse WhatsApp IA vide.");
+  return answer.slice(0, 4000);
+}
+// ================== FIN AGENT IA WHATSAPP ==================
+
+
+// ================== AGENT IA WHATSAPP : REPLI DU CHATBOT ==================
+function estQuestionLibreWhatsApp(texte) {
+  const brut = String(texte || "").trim();
+  const n = brut.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (!n || /^\d+$/.test(n)) return false;
+  return /[?¿]/.test(brut) ||
+    /\b(combien|prix|tarif|cout|comment|pourquoi|quel|quelle|quels|quelles|est ce que|pouvez vous|avez vous|je voudrais savoir|j'aimerais savoir|expliquez|fonctionne|disponible|garantie|installez vous)\b/.test(n);
+}
+
+async function repondreWhatsAppAvecIA(session, message) {
+  const historique = (session.history || []).slice(-12).map(x => ({
+    sens: x.direction === "entrant" ? "Prospect" : "VisionProtection",
+    message: String(x.text || "").slice(0, 1200)
+  }));
+  const contexte = {
+    nom: session.name || "Non communiqué",
+    service: session.service || null,
+    type_site: session.siteType || null,
+    localisation: session.location || null,
+    projet: session.project || null,
+    quantite: session.quantity || null,
+    delai: session.delay || null,
+    historique
+  };
+  const prompt = `
+Tu es l'agent commercial IA de VisionProtection & Informatique à Abidjan, en Côte d'Ivoire.
+Tu interviens en complément du chatbot WhatsApp lorsque le prospect pose une question libre.
+Services confirmés : vidéosurveillance, contrôle d'accès, alarme intrusion, SSI/CMSI, motorisation de portail, domotique, réseau informatique et demandes de devis.
+
+RÈGLES :
+- Réponds en français, naturellement, clairement, avec un ton professionnel et chaleureux.
+- Réponds à la question en tenant compte de l'historique et du contexte du prospect.
+- N'invente jamais de prix, disponibilité, caractéristique technique, garantie ou engagement commercial.
+- Si des détails sont nécessaires, pose au maximum deux questions courtes.
+- Pour un devis ou un prix personnalisé, explique que l'équipe doit confirmer les détails et propose le conseiller.
+- Si tu ne peux pas répondre de façon fiable, dis-le honnêtement et invite le prospect à taper 9 pour parler à un conseiller.
+- Ne prétends jamais qu'un devis, une commande ou une intervention est validé.
+- Réponds uniquement avec le texte à envoyer sur WhatsApp, sans titre ni commentaire technique.
+
+CONTEXTE :
+${JSON.stringify(contexte, null, 2)}
+
+MESSAGE DU PROSPECT :
+${String(message || "").slice(0, 3000)}
+`;
+  const result = await callGemini(prompt, { max503Retries: 1 });
+  const answer = String(result.text || "").trim();
+  if (!answer) throw new Error("Réponse WhatsApp IA vide.");
+  return answer.slice(0, 4000);
+}
+// ================== FIN AGENT IA WHATSAPP ==================
+
 async function processMessage(from,name,text,waId=null,type="text"){
  const s=await getSession(from,name),msg=String(text||"").trim();await addHistory(s,"entrant",msg,waId,type);
  let r;
  if(isConversationStart(msg)){s.state="MENU";s.service=null;r=mainMenu();await addHistory(s,"sortant",r);return r;}
+
+ // Repli IA : question libre, choix non reconnu ou nouvelle demande après clôture.
+ const questionLibre = estQuestionLibreWhatsApp(msg);
+ const choixMenuInvalide = s.state==="MENU" && !SERVICES[msg];
+ const nouveauMessageApresCloture = s.state==="DONE" && msg!=="8";
+ if(choixMenuInvalide || nouveauMessageApresCloture || (questionLibre && !SERVICES[msg])){
+   try{
+     r=await repondreWhatsAppAvecIA(s,msg);
+   }catch(aiError){
+     console.error("⚠️ Agent IA WhatsApp indisponible :",aiError.message);
+     r="Je souhaite vous apporter une réponse fiable, mais je n'arrive pas à traiter votre demande pour le moment. 🙏\\n\\nVous pouvez préciser votre besoin ou taper *9* pour parler à un conseiller VisionProtection.";
+   }
+   await addHistory(s,"sortant",r);
+   return r;
+ }
  if(s.state==="MENU"){if(!SERVICES[msg])r=`Je n'ai pas reconnu votre choix.\n\n${mainMenu()}`;else{const svc=SERVICES[msg];s.service=svc;if(svc==="Demande de devis"){s.state="QUOTE";r=quoteRequestMessage();}else if(svc==="Conseiller"){s.state="ADVISOR";r=`Très bien 👍\n\nDécrivez-moi votre besoin ou votre projet. Un conseiller de VisionProtection & Informatique pourra ensuite vous répondre.`;}else{s.state="SITE_TYPE";r=serviceQuestion(svc)||`Très bien 👍\n\nDécrivez-moi votre besoin.`;}}await addHistory(s,"sortant",r);return r;}
  if(s.state==="SITE_TYPE"){s.siteType=choiceLabel(msg,s.service);s.state="LOCATION";r=`Merci 👍\n\n📍 Dans quelle ville ou commune se situe le projet ?`;await addHistory(s,"sortant",r);return r;}
  if(s.state==="LOCATION"){s.location=msg;s.state="PROJECT";r=`Parfait 👍\n\n📝 Décrivez brièvement votre projet ou votre besoin.\n\nExemple :\n« Je souhaite installer 8 caméras extérieures avec enregistrement pendant 30 jours. »`;await addHistory(s,"sortant",r);return r;}
