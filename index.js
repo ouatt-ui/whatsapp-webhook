@@ -1,4 +1,5 @@
 const express=require("express");
+const crypto=require("crypto");
 const axios=require("axios");
 const mysql=require("mysql2/promise");
 const {GoogleGenAI}=require("@google/genai");
@@ -193,6 +194,26 @@ const gemini=process.env.GEMINI_API_KEY
   ? new GoogleGenAI({apiKey:process.env.GEMINI_API_KEY})
   : null;
 const app=express(); app.use(express.json());
+
+// Accès strictement en lecture seule réservé à VisionProtection Assistant IA.
+const ASSISTANT_READ_TOKEN=String(process.env.ASSISTANT_READ_TOKEN||"").trim();
+function verifierAccesAssistant(req,res,next){
+  const authorization=String(req.get("authorization")||"");
+  const prefix="Bearer ";
+  if(!ASSISTANT_READ_TOKEN){
+    return res.status(503).json({success:false,message:"Accès assistant non configuré."});
+  }
+  if(!authorization.startsWith(prefix)){
+    return res.status(401).json({success:false,message:"Accès non autorisé."});
+  }
+  const recu=Buffer.from(authorization.slice(prefix.length));
+  const attendu=Buffer.from(ASSISTANT_READ_TOKEN);
+  if(recu.length!==attendu.length||!crypto.timingSafeEqual(recu,attendu)){
+    return res.status(401).json({success:false,message:"Accès non autorisé."});
+  }
+  next();
+}
+
 app.use(express.static(__dirname + "/public"));
 const PORT=process.env.PORT||3000;
 const VERIFY_TOKEN=process.env.META_VERIFY_TOKEN||"visionprotection2024";
@@ -955,7 +976,48 @@ app.get("/crm/stats",async(req,res)=>{try{if(dbReady){const[[t]]=await pool.quer
     COUNT(*) AS total,
     SUM(etat_conversation='TERMINE') AS done
   FROM prospects
-`);const[r]=await pool.query("SELECT COALESCE(service,'Non défini') service,COUNT(*) total FROM prospects GROUP BY service ORDER BY total DESC");const byService={};for(const x of r)byService[x.service]=Number(x.total);return res.json({success:true,totalProspects:Number(t.total||0),activeConversations:Number(t.total||0)-Number(t.done||0),completedConversations:Number(t.done||0),byService,database:"mysql"});}const p=[...sessions.values()];res.json({success:true,totalProspects:p.length,activeConversations:p.filter(x=>x.state!=="DONE").length,completedConversations:p.filter(x=>x.state==="DONE").length,database:"memory-fallback"});}catch(e){res.status(500).json({success:false,message:e.message});}});app.get("/crm", (req, res) => {
+`);const[r]=await pool.query("SELECT COALESCE(service,'Non défini') service,COUNT(*) total FROM prospects GROUP BY service ORDER BY total DESC");const byService={};for(const x of r)byService[x.service]=Number(x.total);return res.json({success:true,totalProspects:Number(t.total||0),activeConversations:Number(t.total||0)-Number(t.done||0),completedConversations:Number(t.done||0),byService,database:"mysql"});}const p=[...sessions.values()];res.json({success:true,totalProspects:p.length,activeConversations:p.filter(x=>x.state!=="DONE").length,completedConversations:p.filter(x=>x.state==="DONE").length,database:"memory-fallback"});}catch(e){res.status(500).json({success:false,message:e.message});}});// API dédiée à VisionProtection Assistant IA : statistiques agrégées uniquement.
+// Cette route ne modifie aucune donnée et ne retourne aucune donnée personnelle.
+app.get("/api/assistant/bilan",verifierAccesAssistant,async(req,res)=>{
+  try{
+    if(!dbReady||!pool){
+      return res.status(503).json({success:false,message:"Base CRM indisponible."});
+    }
+    const [[bilan]]=await pool.query(`
+      SELECT
+        COUNT(*) AS totalProspects,
+        COALESCE(SUM(statut='Nouveau'),0) AS nouveaux,
+        COALESCE(SUM(statut='En cours'),0) AS enCours,
+        COALESCE(SUM(statut='Qualifié'),0) AS qualifies,
+        COALESCE(SUM(statut='Devis'),0) AS devis,
+        COALESCE(SUM(statut='Client'),0) AS clients,
+        COALESCE(SUM(statut='Perdu'),0) AS perdus,
+        COALESCE(SUM(etat_conversation='ACTIF'),0) AS conversationsActives
+      FROM prospects
+      WHERE COALESCE(archive_status,'ACTIF')='ACTIF'
+    `);
+    const [services]=await pool.query(`
+      SELECT COALESCE(service,'Non défini') AS service,COUNT(*) AS total
+      FROM prospects
+      WHERE COALESCE(archive_status,'ACTIF')='ACTIF'
+      GROUP BY service
+      ORDER BY total DESC
+    `);
+    for(const key of Object.keys(bilan)) bilan[key]=Number(bilan[key]||0);
+    return res.json({
+      success:true,
+      source:"VisionProtection CRM",
+      lectureSeule:true,
+      bilan,
+      services:services.map(row=>({service:row.service,total:Number(row.total||0)}))
+    });
+  }catch(error){
+    console.error("Erreur bilan Assistant IA :",error.message);
+    return res.status(500).json({success:false,message:"Impossible de consulter le bilan CRM."});
+  }
+});
+
+app.get("/crm", (req, res) => {
   res.sendFile(__dirname + "/public/crm.html");
 });
 
