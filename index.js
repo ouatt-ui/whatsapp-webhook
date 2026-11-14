@@ -713,7 +713,35 @@ async function processMessage(from,name,text,waId=null,type="text"){
    await addHistory(s,"sortant",r);
    return r;
  }
- if(s.state==="MENU"){if(!SERVICES[msg])r=`Je n'ai pas reconnu votre choix.\n\n${mainMenu()}`;else{const svc=SERVICES[msg];s.service=svc;if(svc==="Demande de devis"){s.state="QUOTE";r=quoteRequestMessage();}else if(svc==="Conseiller"){s.state="ADVISOR";r=`Très bien 👍\n\nDécrivez-moi votre besoin ou votre projet. Un conseiller de VisionProtection & Informatique pourra ensuite vous répondre.`;}else{s.state="SITE_TYPE";r=serviceQuestion(svc)||`Très bien 👍\n\nDécrivez-moi votre besoin.`;}}await addHistory(s,"sortant",r);return r;}
+ if(s.state==="MENU"){if(!SERVICES[msg])r=`Je n'ai pas reconnu votre choix.\n\n${mainMenu()}`;else{const svc=SERVICES[msg];s.service=svc;if(svc==="Motorisation de portail"){
+  const images=[
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/motorisation/01-protection-et-automatisation.png",
+      caption:"VisionProtection - Protection et automatisation"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/motorisation/02-motorisation-portail-coulissant.png",
+      caption:"Motorisation de portail coulissant"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/motorisation/03-motorisation-portail-battant.png",
+      caption:"Motorisation de portail battant"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/motorisation/04-installation-automatisme-portail.png",
+      caption:"Installation et maintenance de motorisation"
+    }
+  ];
+
+  for(const img of images){
+    try{
+      await sendImage(from,img.url,img.caption);
+      await addHistory(s,"sortant",img.caption,null,"image");
+    }catch(e){
+      console.error("Erreur envoi image motorisation :",e.message);
+    }
+  }
+}if(svc==="Demande de devis"){s.state="QUOTE";r=quoteRequestMessage();}else if(svc==="Conseiller"){s.state="ADVISOR";r=`Très bien 👍\n\nDécrivez-moi votre besoin ou votre projet. Un conseiller de VisionProtection & Informatique pourra ensuite vous répondre.`;}else{s.state="SITE_TYPE";r=serviceQuestion(svc)||`Très bien 👍\n\nDécrivez-moi votre besoin.`;}}await addHistory(s,"sortant",r);return r;}
  if(s.state==="SITE_TYPE"){s.siteType=choiceLabel(msg,s.service);s.state="LOCATION";r=`Merci 👍\n\n📍 Dans quelle ville ou commune se situe le projet ?`;await addHistory(s,"sortant",r);return r;}
  if(s.state==="LOCATION"){s.location=msg;s.state="PROJECT";r=`Parfait 👍\n\n📝 Décrivez brièvement votre projet ou votre besoin.\n\nExemple :\n« Je souhaite installer 8 caméras extérieures avec enregistrement pendant 30 jours. »`;await addHistory(s,"sortant",r);return r;}
  if(s.state==="PROJECT"){s.project=msg;s.state="QUANTITY";r=`Merci pour ces informations 👍\n\n🔢 Quelle est la quantité approximative souhaitée ?\n\nExemple : 8 caméras, 2 portes, 1 portail, 20 prises réseau, etc.`;await addHistory(s,"sortant",r);return r;}
