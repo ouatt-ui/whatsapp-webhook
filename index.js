@@ -700,19 +700,35 @@ async function processMessage(from,name,text,waId=null,type="text"){
  if(isConversationStart(msg)){s.state="MENU";s.service=null;r=mainMenu();await addHistory(s,"sortant",r);return r;}
 
  // Repli IA : question libre, choix non reconnu ou nouvelle demande après clôture.
- const questionLibre = estQuestionLibreWhatsApp(msg);
- const choixMenuInvalide = s.state==="MENU" && !SERVICES[msg];
- const nouveauMessageApresCloture = s.state==="DONE" && msg!=="8";
- if(choixMenuInvalide || nouveauMessageApresCloture || (questionLibre && !SERVICES[msg])){
-   try{
-     r=await repondreWhatsAppAvecIA(s,msg);
-   }catch(aiError){
-     console.error("⚠️ Agent IA WhatsApp indisponible :",aiError.message);
-     r="Je souhaite vous apporter une réponse fiable, mais je n'arrive pas à traiter votre demande pour le moment. 🙏\\n\\nVous pouvez préciser votre besoin ou taper *9* pour parler à un conseiller VisionProtection.";
-   }
-   await addHistory(s,"sortant",r);
-   return r;
- }
+// Réponse IA : question libre, choix invalide ou nouvelle demande
+const questionLibre = estQuestionLibreWhatsApp(msg);
+
+const choixMenuInvalide =
+  s.state === "MENU" && !SERVICES[msg];
+
+const choixEtapeInvalide =
+  s.state === "SITE_TYPE" &&
+  (!/^[1-9]\d*$/.test(msg) || choiceLabel(msg, s.service) === msg);
+
+const nouveauMessageApresCloture =
+  s.state === "DONE" && msg !== "8";
+
+if (
+  choixMenuInvalide ||
+  choixEtapeInvalide ||
+  nouveauMessageApresCloture ||
+  (questionLibre && !SERVICES[msg])
+) {
+  try {
+    r = await repondreWhatsAppAvecIA(s, msg);
+  } catch (aiError) {
+    console.error("⚠️ Agent IA WhatsApp indisponible :", aiError.message);
+    r = "Je souhaite vous apporter une réponse fiable, mais je n'arrive pas à traiter votre demande pour le moment. 🙏\n\nVous pouvez préciser votre besoin ou taper *9* pour parler à un conseiller VisionProtection.";
+  }
+
+  await addHistory(s, "sortant", r);
+  return r;
+}
  if(s.state==="MENU"){if(!SERVICES[msg])r=`Je n'ai pas reconnu votre choix.\n\n${mainMenu()}`;else{const svc=SERVICES[msg];s.service=svc;if(svc==="Motorisation de portail"){
   const images=[
     {
