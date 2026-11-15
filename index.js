@@ -757,6 +757,37 @@ if (
       console.error("Erreur envoi image motorisation :",e.message);
     }
   }
+   
+if(svc==="Alarme intrusion"){
+  const images=[
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/alarme/01-systeme-alarme-anti-intrusion.png",
+      caption:"Système complet d'alarme anti-intrusion VisionProtection"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/alarme/02-installation-barriere-infrarouge.png",
+      caption:"Installation de barrière infrarouge"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/alarme/03-protection-exterieure-propriete.jpg",
+      caption:"Protection extérieure de votre propriété"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/alarme/04-installation-cloture-electrique.png",
+      caption:"Installation de clôture électrique"
+    }
+  ];
+
+  for(const img of images){
+    try{
+      await sendImage(from,img.url,img.caption);
+      await addHistory(s,"sortant",img.caption,null,"image");
+    }catch(e){
+      console.error("Erreur envoi image alarme :",e.message);
+    }
+  }
+}
+
 }if(svc==="Demande de devis"){s.state="QUOTE";r=quoteRequestMessage();}else if(svc==="Conseiller"){s.state="ADVISOR";r=`Très bien 👍\n\nDécrivez-moi votre besoin ou votre projet. Un conseiller de VisionProtection & Informatique pourra ensuite vous répondre.`;}else{s.state="SITE_TYPE";r=serviceQuestion(svc)||`Très bien 👍\n\nDécrivez-moi votre besoin.`;}}await addHistory(s,"sortant",r);return r;}
  if(s.state==="SITE_TYPE"){s.siteType=choiceLabel(msg,s.service);s.state="LOCATION";r=`Merci 👍\n\n📍 Dans quelle ville ou commune se situe le projet ?`;await addHistory(s,"sortant",r);return r;}
  if(s.state==="LOCATION"){s.location=msg;s.state="PROJECT";r=`Parfait 👍\n\n📝 Décrivez brièvement votre projet ou votre besoin.\n\nExemple :\n« Je souhaite installer 8 caméras extérieures avec enregistrement pendant 30 jours. »`;await addHistory(s,"sortant",r);return r;}
