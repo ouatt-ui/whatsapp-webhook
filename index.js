@@ -729,7 +729,42 @@ if (
   await addHistory(s, "sortant", r);
   return r;
 }
- if(s.state==="MENU"){if(!SERVICES[msg])r=`Je n'ai pas reconnu votre choix.\n\n${mainMenu()}`;else{const svc=SERVICES[msg];s.service=svc;if(svc==="Motorisation de portail"){
+ if(s.state==="MENU"){if(!SERVICES[msg])r=`Je n'ai pas reconnu votre choix.\n\n${mainMenu()}`;else{const svc=SERVICES[msg];s.service=svc;
+if(svc==="Vidéosurveillance"){
+  const images=[
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/videosurveillance/01-systeme-videosurveillance-dahua.png",
+      caption:"Système de vidéosurveillance CCTV Dahua - VisionProtection"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/videosurveillance/02-installation-cameras-techniciens.png",
+      caption:"Installation professionnelle de caméras de surveillance"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/videosurveillance/03-installation-cameras-hikvision-ip65.jpeg",
+      caption:"Installation de caméras extérieures Hikvision avec protection IP65"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/videosurveillance/04-camera-solaire-imou-4g-wifi.jpeg",
+      caption:"Caméra de surveillance solaire Imou 4G / Wi-Fi"
+    }
+  ];
+
+  for(const img of images){
+    try{
+      await sendImage(from,img.url,img.caption);
+      await addHistory(s,"sortant",img.caption,null,"image");
+    }catch(e){
+      console.error("Erreur envoi image vidéosurveillance :", {
+        message: e.message,
+        status: e.response?.status || null,
+        meta: e.response?.data || null,
+        imageUrl: img.url
+      });
+    }
+  }
+}
+if(svc==="Motorisation de portail"){
   const images=[
     {
       url:"https://whatsapp-webhook-7t7h.onrender.com/images/motorisation/01-protection-et-automatisation.png",
