@@ -870,6 +870,41 @@ if(svc==="Contrôle d'accès"){
   }
 }
 
+if(svc==="SSI / CMSI"){
+  const images=[
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/incendie/01-extincteur-securite-incendie.png",
+      caption:"Extincteur de sécurité incendie - VisionProtection"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/incendie/02-systeme-ssi-cmsi.png",
+      caption:"Système de sécurité incendie SSI / CMSI"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/incendie/03-detection-incendie-bureau.png",
+      caption:"Détection incendie : détecteurs, alarme et centrale de supervision"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/incendie/04-alarme-incendie-sans-fil.png",
+      caption:"Système d'alarme incendie sans fil"
+    }
+  ];
+
+  for(const img of images){
+    try{
+      await sendImage(from,img.url,img.caption);
+      await addHistory(s,"sortant",img.caption,null,"image");
+    }catch(e){
+      console.error("Erreur envoi image SSI / CMSI :", {
+        message: e.message,
+        status: e.response?.status || null,
+        meta: e.response?.data || null,
+        imageUrl: img.url
+      });
+    }
+  }
+}
+
 if(svc==="Demande de devis"){s.state="QUOTE";r=quoteRequestMessage();}else if(svc==="Conseiller"){s.state="ADVISOR";r=`Très bien 👍\n\nDécrivez-moi votre besoin ou votre projet. Un conseiller de VisionProtection & Informatique pourra ensuite vous répondre.`;}else{s.state="SITE_TYPE";r=serviceQuestion(svc)||`Très bien 👍\n\nDécrivez-moi votre besoin.`;}}await addHistory(s,"sortant",r);return r;}
  if(s.state==="SITE_TYPE"){s.siteType=choiceLabel(msg,s.service);s.state="LOCATION";r=`Merci 👍\n\n📍 Dans quelle ville ou commune se situe le projet ?`;await addHistory(s,"sortant",r);return r;}
  if(s.state==="LOCATION"){s.location=msg;s.state="PROJECT";r=`Parfait 👍\n\n📝 Décrivez brièvement votre projet ou votre besoin.\n\nExemple :\n« Je souhaite installer 8 caméras extérieures avec enregistrement pendant 30 jours. »`;await addHistory(s,"sortant",r);return r;}
