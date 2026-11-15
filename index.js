@@ -754,10 +754,17 @@ if (
       await sendImage(from,img.url,img.caption);
       await addHistory(s,"sortant",img.caption,null,"image");
     }catch(e){
-      console.error("Erreur envoi image motorisation :",e.message);
+      console.error("Erreur envoi image motorisation :", {
+        message: e.message,
+        status: e.response?.status || null,
+        meta: e.response?.data || null,
+        imageUrl: img.url
+      });
     }
   }
    
+}
+
 if(svc==="Alarme intrusion"){
   const images=[
     {
@@ -783,12 +790,17 @@ if(svc==="Alarme intrusion"){
       await sendImage(from,img.url,img.caption);
       await addHistory(s,"sortant",img.caption,null,"image");
     }catch(e){
-      console.error("Erreur envoi image alarme :",e.message);
+      console.error("Erreur envoi image alarme :", {
+        message: e.message,
+        status: e.response?.status || null,
+        meta: e.response?.data || null,
+        imageUrl: img.url
+      });
     }
   }
 }
 
-}if(svc==="Demande de devis"){s.state="QUOTE";r=quoteRequestMessage();}else if(svc==="Conseiller"){s.state="ADVISOR";r=`Très bien 👍\n\nDécrivez-moi votre besoin ou votre projet. Un conseiller de VisionProtection & Informatique pourra ensuite vous répondre.`;}else{s.state="SITE_TYPE";r=serviceQuestion(svc)||`Très bien 👍\n\nDécrivez-moi votre besoin.`;}}await addHistory(s,"sortant",r);return r;}
+if(svc==="Demande de devis"){s.state="QUOTE";r=quoteRequestMessage();}else if(svc==="Conseiller"){s.state="ADVISOR";r=`Très bien 👍\n\nDécrivez-moi votre besoin ou votre projet. Un conseiller de VisionProtection & Informatique pourra ensuite vous répondre.`;}else{s.state="SITE_TYPE";r=serviceQuestion(svc)||`Très bien 👍\n\nDécrivez-moi votre besoin.`;}}await addHistory(s,"sortant",r);return r;}
  if(s.state==="SITE_TYPE"){s.siteType=choiceLabel(msg,s.service);s.state="LOCATION";r=`Merci 👍\n\n📍 Dans quelle ville ou commune se situe le projet ?`;await addHistory(s,"sortant",r);return r;}
  if(s.state==="LOCATION"){s.location=msg;s.state="PROJECT";r=`Parfait 👍\n\n📝 Décrivez brièvement votre projet ou votre besoin.\n\nExemple :\n« Je souhaite installer 8 caméras extérieures avec enregistrement pendant 30 jours. »`;await addHistory(s,"sortant",r);return r;}
  if(s.state==="PROJECT"){s.project=msg;s.state="QUANTITY";r=`Merci pour ces informations 👍\n\n🔢 Quelle est la quantité approximative souhaitée ?\n\nExemple : 8 caméras, 2 portes, 1 portail, 20 prises réseau, etc.`;await addHistory(s,"sortant",r);return r;}
@@ -809,7 +821,7 @@ async function sendImage(to, imageUrl, caption = "") {
   const payload = {
     messaging_product: "whatsapp",
     recipient_type: "individual",
-    to,
+    to: normalizeForApi(to),
     type: "image",
     image: {
       link: imageUrl,
