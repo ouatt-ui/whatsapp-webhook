@@ -905,6 +905,41 @@ if(svc==="SSI / CMSI"){
   }
 }
 
+if(svc==="Domotique"){
+  const images=[
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/domotique/Domotique%20intelligente%20VisionProtection.png",
+      caption:"Domotique intelligente VisionProtection"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/domotique/Maison%20intelligente,%20s%C3%A9curit%C3%A9%20connect%C3%A9e.png",
+      caption:"Maison intelligente et sécurité connectée"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/domotique/Sonorisation%20intelligente%20et%20centralis%C3%A9e.png",
+      caption:"Sonorisation intelligente et centralisée"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/domotique/%C3%89clairage%20intelligent%20pour%20maison%20connect%C3%A9e.png",
+      caption:"Éclairage intelligent pour maison connectée"
+    }
+  ];
+
+  for(const img of images){
+    try{
+      await sendImage(from,img.url,img.caption);
+      await addHistory(s,"sortant",img.caption,null,"image");
+    }catch(e){
+      console.error("Erreur envoi image domotique :", {
+        message: e.message,
+        status: e.response?.status || null,
+        meta: e.response?.data || null,
+        imageUrl: img.url
+      });
+    }
+  }
+}
+
 if(svc==="Réseau informatique"){
   const images=[
     {
