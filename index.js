@@ -835,6 +835,111 @@ if(svc==="Alarme intrusion"){
   }
 }
 
+if(svc==="Contrôle d'accès"){
+  const images=[
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/controle-acces/01-gestion-biometrique-visionattendance.png",
+      caption:"Gestion biométrique des présences avec VisionAttendance"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/controle-acces/02-visiophone-connecte.png",
+      caption:"Visiophone connecté - contrôle et communication à distance"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/controle-acces/03-controle-acces-securise.png",
+      caption:"Contrôle d'accès sécurisé par biométrie, badge ou code PIN"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/controle-acces/04-interphone-hikvision.png",
+      caption:"Installation d'interphone et contrôle d'accès Hikvision"
+    }
+  ];
+
+  for(const img of images){
+    try{
+      await sendImage(from,img.url,img.caption);
+      await addHistory(s,"sortant",img.caption,null,"image");
+    }catch(e){
+      console.error("Erreur envoi image contrôle d'accès :", {
+        message: e.message,
+        status: e.response?.status || null,
+        meta: e.response?.data || null,
+        imageUrl: img.url
+      });
+    }
+  }
+}
+
+if(svc==="SSI / CMSI"){
+  const images=[
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/incendie/01-extincteur-securite-incendie.png",
+      caption:"Extincteur de sécurité incendie - VisionProtection"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/incendie/02-systeme-ssi-cmsi.png",
+      caption:"Système de sécurité incendie SSI / CMSI"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/incendie/03-detection-incendie-bureau.png",
+      caption:"Détection incendie : détecteurs, alarme et centrale de supervision"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/incendie/04-alarme-incendie-sans-fil.png",
+      caption:"Système d'alarme incendie sans fil"
+    }
+  ];
+
+  for(const img of images){
+    try{
+      await sendImage(from,img.url,img.caption);
+      await addHistory(s,"sortant",img.caption,null,"image");
+    }catch(e){
+      console.error("Erreur envoi image SSI / CMSI :", {
+        message: e.message,
+        status: e.response?.status || null,
+        meta: e.response?.data || null,
+        imageUrl: img.url
+      });
+    }
+  }
+}
+
+if(svc==="Réseau informatique"){
+  const images=[
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/reseau-informatique/01-installation-reseau-wifi.png",
+      caption:"Installation professionnelle de réseau Wi-Fi"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/reseau-informatique/02-baie-informatique-videosurveillance.png",
+      caption:"Baie informatique et infrastructure réseau"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/reseau-informatique/03-installation-courants-faibles.png",
+      caption:"Installation de câblage et courants faibles"
+    },
+    {
+      url:"https://whatsapp-webhook-7t7h.onrender.com/images/reseau-informatique/04-salle-informatique.png",
+      caption:"Aménagement et installation de salle informatique"
+    }
+  ];
+
+  for(const img of images){
+    try{
+      await sendImage(from,img.url,img.caption);
+      await addHistory(s,"sortant",img.caption,null,"image");
+    }catch(e){
+      console.error("Erreur envoi image réseau informatique :", {
+        message: e.message,
+        status: e.response?.status || null,
+        meta: e.response?.data || null,
+        imageUrl: img.url
+      });
+    }
+  }
+}
+
 if(svc==="Demande de devis"){s.state="QUOTE";r=quoteRequestMessage();}else if(svc==="Conseiller"){s.state="ADVISOR";r=`Très bien 👍\n\nDécrivez-moi votre besoin ou votre projet. Un conseiller de VisionProtection & Informatique pourra ensuite vous répondre.`;}else{s.state="SITE_TYPE";r=serviceQuestion(svc)||`Très bien 👍\n\nDécrivez-moi votre besoin.`;}}await addHistory(s,"sortant",r);return r;}
  if(s.state==="SITE_TYPE"){s.siteType=choiceLabel(msg,s.service);s.state="LOCATION";r=`Merci 👍\n\n📍 Dans quelle ville ou commune se situe le projet ?`;await addHistory(s,"sortant",r);return r;}
  if(s.state==="LOCATION"){s.location=msg;s.state="PROJECT";r=`Parfait 👍\n\n📝 Décrivez brièvement votre projet ou votre besoin.\n\nExemple :\n« Je souhaite installer 8 caméras extérieures avec enregistrement pendant 30 jours. »`;await addHistory(s,"sortant",r);return r;}
